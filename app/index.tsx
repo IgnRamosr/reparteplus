@@ -2,20 +2,31 @@
 import { useEffect } from 'react';
 import { router } from 'expo-router';
 import { InteractionManager } from 'react-native';
-
-// 👇 ejemplo simple: cambiar cuando tengas un estado de sesión real
-const isLoggedIn = false;
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function Index() {
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
-      if (isLoggedIn) {
-        router.replace('/home' as const);   // si hay sesión activa
-      } else {
-        router.replace('/(auth)/login' as const); // si no hay sesión
+    let cancelled = false;
+
+    const task = InteractionManager.runAfterInteractions(async () => {
+      try {
+        const token = await AsyncStorage.getItem('auth_token');
+        if (cancelled) return; // evita redirección tras desmontar
+        if (token) {
+          router.replace('/home' as const);
+        } else {
+          router.replace('/login' as const);
+        }
+      } catch (e) {
+        console.warn('[Index] Error leyendo token:', e);
+        if (!cancelled) router.replace('/login' as const);
       }
     });
-    return () => (task as any)?.cancel?.();
+
+    return () => {
+      cancelled = true;
+      (task as any)?.cancel?.();
+    };
   }, []);
 
   return null;

@@ -36,7 +36,7 @@ export async function saveUser(u: NewUser) {
   const d = await getDb();
   await d.runAsync(
     `INSERT INTO users (email, phone, password, inviteToken)
-     VALUES (?, ?, ?, ?)`,
+    VALUES (?, ?, ?, ?)`,
     [u.email, u.phone ?? null, u.password, u.inviteToken ?? null]
   );
 }
@@ -72,8 +72,8 @@ export async function getUsers(): Promise<Row[]> {
   const d = await getDb();
   const rows = await d.getAllAsync<Row>(
     `SELECT id, email, phone, password, inviteToken, created_at
-     FROM users
-     ORDER BY created_at DESC`
+    FROM users
+    ORDER BY created_at DESC`
   );
   return rows ?? [];
 }

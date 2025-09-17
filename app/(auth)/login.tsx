@@ -4,11 +4,10 @@ import { ActivityIndicator, Alert, InteractionManager, Pressable, TextInput } fr
 import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { router } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { loginSchema, type LoginSchema } from '../../lib/validation';
-import { mockApi, type ApiError } from '../../lib/mock';
-import { verifyUserLocal } from '../../lib/db';
-
+import { api, type ApiError } from '../../lib/api';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
 
@@ -23,31 +22,27 @@ export default function LoginScreen() {
     defaultValues: { email: '', password: '' },
   });
 
-  const onSubmit = async (values: LoginSchema) => {
+  const onSubmit = async (data: LoginSchema) => {
+    if (submitting) return;
     try {
       setSubmitting(true);
 
-      const email = values.email.trim().toLowerCase();
-      const password = values.password;
+      const res = await api.login({
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+      });
 
-      // 1) Intento con API (mock)
-      try {
-        await mockApi.login({ email, password });
-        goHome();
-        return;
-      } catch (e) {
-        const err = e as ApiError;
-        if (err?.status !== 401) throw e; // otros errores “reales”
-      }
+      // 👇 Para depurar qué está devolviendo tu backend
+      console.log('[LOGIN RES]', res);
 
-      // 2) Fallback demo: verifica credencial guardada en SQLite
-      const okLocal = await verifyUserLocal(email, password);
-      if (okLocal) {
-        goHome();
-        return;
-      }
+      // Si NO viene token, igual guardamos un marcador local para que el app te deje pasar.
+      const token =
+        typeof res?.token === 'string' && res.token.trim().length > 0
+          ? res.token.trim()
+          : 'local-session'; // marcador local
 
-      Alert.alert('Credenciales inválidas', 'Revisa tu correo o contraseña.');
+      await AsyncStorage.setItem('auth_token', token);
+      goHome();
     } catch (e) {
       const err = e as ApiError;
       Alert.alert('Error', err?.message || 'No se pudo iniciar sesión');
@@ -56,97 +51,61 @@ export default function LoginScreen() {
     }
   };
 
+  const styles = {
+    input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 },
+    error: { color: '#d00', marginTop: 4 },
+    button: {
+      marginTop: 20, borderRadius: 10, paddingVertical: 14,
+      alignItems: 'center', justifyContent: 'center', backgroundColor: 'black',
+      opacity: submitting ? 0.7 : 1,
+    },
+    secondary: {
+      marginTop: 8, borderRadius: 10, paddingVertical: 14,
+      alignItems: 'center', justifyContent: 'center', backgroundColor: '#111',
+      opacity: submitting ? 0.7 : 1,
+    },
+  } as const;
+
   return (
     <ThemedView style={{ flex: 1, paddingHorizontal: 24, paddingTop: 56 }}>
-      <ThemedText type="title" style={{ textAlign: 'center', marginBottom: 4 }}>
-        Reparte+
-      </ThemedText>
-      <ThemedText type="subtitle" style={{ textAlign: 'center', marginBottom: 24 }}>
-        Iniciar Sesión
-      </ThemedText>
+      <ThemedText type="title" style={{ textAlign: 'center', marginBottom: 4 }}>Reparte+</ThemedText>
+      <ThemedText type="subtitle" style={{ textAlign: 'center', marginBottom: 24 }}>Iniciar Sesión</ThemedText>
 
       <ThemedText style={{ marginBottom: 8 }}>Correo electrónico</ThemedText>
-      <Controller
-        control={control}
-        name="email"
-        render={({ field: { value, onChange, onBlur } }) => (
-          <TextInput
-            value={value ?? ''}
-            onChangeText={onChange}
-            onBlur={onBlur}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="usuario@correo.cl"
-            style={styles.input}
-          />
-        )}
-      />
-      {errors.email?.message && (
-        <ThemedText style={styles.error}>{errors.email.message}</ThemedText>
-      )}
+      <Controller control={control} name="email" render={({ field }) => (
+        <TextInput
+          value={field.value ?? ''} onChangeText={field.onChange} onBlur={field.onBlur}
+          autoCapitalize="none" keyboardType="email-address" placeholder="usuario@correo.cl"
+          style={styles.input} editable={!submitting} returnKeyType="next"
+        />
+      )}/>
+      {errors.email?.message && <ThemedText style={styles.error}>{errors.email.message}</ThemedText>}
 
       <ThemedText style={{ marginTop: 12, marginBottom: 8 }}>Contraseña</ThemedText>
-      <Controller
-        control={control}
-        name="password"
-        render={({ field: { value, onChange, onBlur } }) => (
-          <TextInput
-            value={value ?? ''}
-            onChangeText={onChange}
-            onBlur={onBlur}
-            placeholder="******"
-            secureTextEntry
-            style={styles.input}
-          />
-        )}
-      />
-      {errors.password?.message && (
-        <ThemedText style={styles.error}>{errors.password.message}</ThemedText>
-      )}
+      <Controller control={control} name="password" render={({ field }) => (
+        <TextInput
+          value={field.value ?? ''} onChangeText={field.onChange} onBlur={field.onBlur}
+          placeholder="********" secureTextEntry style={styles.input}
+          editable={!submitting} returnKeyType="go" onSubmitEditing={handleSubmit(onSubmit)}
+        />
+      )}/>
+      {errors.password?.message && <ThemedText style={styles.error}>{errors.password.message}</ThemedText>}
 
       <Pressable disabled={submitting} onPress={handleSubmit(onSubmit)} style={styles.button}>
-        {submitting ? (
-          <ActivityIndicator />
-        ) : (
-          <ThemedText type="link" style={{ textAlign: 'center' }}>
-            Ingresar
-          </ThemedText>
-        )}
+        {submitting ? <ActivityIndicator/> : <ThemedText type="link">Ingresar</ThemedText>}
       </Pressable>
 
-      <Pressable
-        disabled={submitting}
-        onPress={() => router.push('/register' as const)}
-        style={[styles.button, { backgroundColor: '#111', marginTop: 8 }]}
-      >
-        <ThemedText type="link" style={{ textAlign: 'center' }}>
-          Crea tu cuenta aquí
-        </ThemedText>
+      <Pressable disabled={submitting} onPress={() => router.push('/register' as const)} style={styles.secondary}>
+        <ThemedText type="link">Crea tu cuenta aquí</ThemedText>
       </Pressable>
 
       <ThemedText style={{ textAlign: 'center', marginTop: 14, opacity: 0.6 }}>
         ¿Olvidaste tu contraseña?
       </ThemedText>
-      <ThemedText
-        type="link"
-        onPress={() => router.push('/forgot' as const)}
-        style={{ textAlign: 'center', color:'black' }}
-      >
+      <ThemedText type="link" onPress={() => router.push('/forgot' as const)}
+        style={{ textAlign: 'center', color: 'black' }}>
         Recuperarla
       </ThemedText>
     </ThemedView>
   );
 }
-
-const styles = {
-  input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 },
-  error: { color: '#d00', marginTop: 4 },
-  button: {
-    marginTop: 20,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'black',
-  },
-} as const;
