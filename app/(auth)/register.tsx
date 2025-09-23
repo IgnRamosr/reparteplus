@@ -5,9 +5,9 @@ import { Controller, useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 
 import { registerSchema, type RegisterSchema } from '../../lib/validation';
-import { api, type ApiError } from '../../lib/api';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
+import { authSignUp } from '../../lib/auth';
 
 export default function RegisterScreen() {
   const { invite } = useLocalSearchParams<{ invite?: string }>();
@@ -23,26 +23,19 @@ export default function RegisterScreen() {
     if (submitting) return;
     try {
       setSubmitting(true);
-      const res = await api.register({
-        name: data.name.trim(),
-        email: data.email.trim().toLowerCase(),
-        phone: data.phone || undefined,
-        password: data.password,
-        inviteToken: inviteToken || undefined,
-      });
 
-      const msg = res.message || (inviteToken
-        ? 'Cuenta creada y asociada al grupo.'
-        : 'Cuenta creada. Ahora puedes iniciar sesión.');
-      if (Platform.OS === 'web') {
-        window.alert(`¡Listo!\n${msg}`);
-      } else {
-        Alert.alert('¡Listo!', msg);
-      }
-      router.replace('/login' as const);
-    } catch (e) {
-      const err = e as ApiError;
-      Alert.alert('Error', err?.message || 'No se pudo registrar');
+      await authSignUp(data.email.trim().toLowerCase(), data.password);
+
+      const msg = inviteToken
+        ? 'Cuenta creada. Te enviamos un código para confirmar y quedas asociado al grupo.'
+        : 'Cuenta creada. Te enviamos un código para confirmar tu email.';
+      if (Platform.OS === 'web') window.alert(`¡Listo!\n${msg}`); else Alert.alert('¡Listo!', msg);
+
+      const email = data.email.trim().toLowerCase();
+      // 👉 Navegación con objeto + params (evita error de tipos)
+      router.replace({ pathname: '/(auth)/confirm', params: { email } } as any);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'No se pudo registrar');
     } finally {
       setSubmitting(false);
     }

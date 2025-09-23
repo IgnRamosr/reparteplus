@@ -1,35 +1,47 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, TextInput } from 'react-native';
-import { Controller, useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { router } from 'expo-router';
-
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
-import { forgotPwdSchema, type ForgotPwdSchema } from '../../lib/validation';
-import { api, type ApiError } from '../../lib/api';
+import { router } from 'expo-router';
+import { authForgot, authReset } from '../../lib/auth';
 
 export default function ForgotPasswordScreen() {
-  const [submitting, setSubmitting] = useState(false);
+  const [email, setEmail] = useState('');
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState('');
+  const [newPwd, setNewPwd] = useState('');
+  const [busy, setBusy] = useState(false);
 
-  const { control, handleSubmit, formState: { errors } } = useForm<ForgotPwdSchema>({
-    resolver: zodResolver(forgotPwdSchema),
-    defaultValues: { email: '' },
-  });
+  const styles = {
+    input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12, marginTop: 10 },
+    button: {
+      marginTop: 16, borderRadius: 10, paddingVertical: 14,
+      alignItems: 'center', justifyContent: 'center', backgroundColor: 'black',
+    },
+  } as const;
 
-  const onSubmit = async (data: ForgotPwdSchema) => {
-    if (submitting) return;
+  const send = async () => {
+    if (!email) return Alert.alert('Email requerido');
     try {
-      setSubmitting(true);
-      const res = await api.forgot({ email: data.email.trim().toLowerCase() });
-      Alert.alert('Revisa tu correo', res.message || 'Si el correo existe, te enviaremos instrucciones.');
+      setBusy(true);
+      await authForgot(email.trim().toLowerCase());
+      setSent(true);
+      Alert.alert('Código enviado', 'Revisa tu correo.');
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No se pudo enviar el código');
+    } finally { setBusy(false); }
+  };
+
+  const confirm = async () => {
+    if (!email || !code || !newPwd) return Alert.alert('Faltan datos');
+    try {
+      setBusy(true);
+      await authReset(email.trim().toLowerCase(), code.trim(), newPwd);
+      Alert.alert('Listo', 'Contraseña actualizada. Inicia sesión.');
       router.replace('/login' as const);
-    } catch (e) {
-      const err = e as ApiError;
-      Alert.alert('Error', err?.message || 'No se pudo procesar tu solicitud.');
-    } finally {
-      setSubmitting(false);
-    }
+    } catch (e: any) {
+      Alert.alert('Error', e?.message ?? 'No se pudo actualizar la contraseña');
+    } finally { setBusy(false); }
   };
 
   return (
@@ -39,18 +51,22 @@ export default function ForgotPasswordScreen() {
         Recuperar contraseña
       </ThemedText>
 
-      <ThemedText style={{ marginBottom: 8 }}>Correo electrónico</ThemedText>
-      <Controller control={control} name="email" render={({ field }) => (
-        <TextInput value={field.value ?? ''} onChangeText={field.onChange} onBlur={field.onBlur}
-          autoCapitalize="none" keyboardType="email-address" placeholder="usuario@correo.cl"
-          style={{ borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 }}
-          editable={!submitting} returnKeyType="send" onSubmitEditing={handleSubmit(onSubmit)} />
-      )}/>
-      {errors.email?.message && <ThemedText style={{ color: '#d00', marginTop: 4 }}>{errors.email.message}</ThemedText>}
+      <ThemedText>Correo electrónico</ThemedText>
+      <TextInput value={email} onChangeText={setEmail}
+        autoCapitalize="none" keyboardType="email-address" placeholder="usuario@correo.cl" style={styles.input} />
 
-      <Pressable disabled={submitting} onPress={handleSubmit(onSubmit)}
-        style={{ marginTop: 24, borderRadius: 10, paddingVertical: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: 'black', opacity: submitting ? 0.7 : 1 }}>
-        {submitting ? <ActivityIndicator/> : <ThemedText type="link">Enviar instrucciones</ThemedText>}
+      {sent && (
+        <>
+          <ThemedText style={{ marginTop: 10 }}>Código</ThemedText>
+          <TextInput value={code} onChangeText={setCode} placeholder="123456"
+            keyboardType="number-pad" style={styles.input} />
+          <ThemedText style={{ marginTop: 10 }}>Nueva contraseña</ThemedText>
+          <TextInput value={newPwd} onChangeText={setNewPwd} placeholder="********" secureTextEntry style={styles.input} />
+        </>
+      )}
+
+      <Pressable disabled={busy} onPress={sent ? confirm : send} style={styles.button}>
+        {busy ? <ActivityIndicator /> : <ThemedText type="link">{sent ? 'Confirmar nueva contraseña' : 'Enviar código'}</ThemedText>}
       </Pressable>
     </ThemedView>
   );

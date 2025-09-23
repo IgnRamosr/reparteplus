@@ -7,9 +7,9 @@ import { router } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { loginSchema, type LoginSchema } from '../../lib/validation';
-import { api, type ApiError } from '../../lib/api';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
+import { authSignIn } from '../../lib/auth';
 
 const goHome = () =>
   InteractionManager.runAfterInteractions(() => router.replace('/home' as const));
@@ -24,28 +24,42 @@ export default function LoginScreen() {
 
   const onSubmit = async (data: LoginSchema) => {
     if (submitting) return;
+    const email = data.email.trim().toLowerCase();
+
     try {
       setSubmitting(true);
+      console.log('[signIn attempt]', email);
 
-      const res = await api.login({
-        email: data.email.trim().toLowerCase(),
-        password: data.password,
-      });
+      await authSignIn(email, data.password);
 
-      // 👇 Para depurar qué está devolviendo tu backend
-      console.log('[LOGIN RES]', res);
+      // Sólo para “desbloquear” navegación en tu app
+      await AsyncStorage.setItem('auth_token', 'cognito');
 
-      // Si NO viene token, igual guardamos un marcador local para que el app te deje pasar.
-      const token =
-        typeof res?.token === 'string' && res.token.trim().length > 0
-          ? res.token.trim()
-          : 'local-session'; // marcador local
-
-      await AsyncStorage.setItem('auth_token', token);
       goHome();
-    } catch (e) {
-      const err = e as ApiError;
-      Alert.alert('Error', err?.message || 'No se pudo iniciar sesión');
+    } catch (e: any) {
+      // Log detallado en la consola de Expo
+      console.error('[signIn error raw]', e);
+
+      // Traducción de errores típicos de Cognito
+      const code = e?.name || e?.__type || 'Unknown';
+      const msgMap: Record<string, string> = {
+        UserNotConfirmedException: 'Debes confirmar tu cuenta. Revisa tu correo.',
+        NotAuthorizedException: 'Correo o contraseña inválidos.',
+        UserNotFoundException: 'No existe una cuenta con ese correo.',
+        PasswordResetRequiredException: 'Debes restablecer tu contraseña.',
+        InvalidParameterException: 'Parámetros inválidos.',
+        TooManyRequestsException: 'Demasiados intentos. Intenta más tarde.',
+        LimitExceededException: 'Límite excedido. Intenta más tarde.',
+        // fallback
+        Unknown: e?.message || 'Ocurrió un error desconocido.',
+      };
+      const human = msgMap[code] || (e?.message ?? 'No se pudo iniciar sesión');
+      Alert.alert('Error', human);
+
+      // Si está sin confirmar, abre confirmación con el email
+      if (code === 'UserNotConfirmedException') {
+        router.push({ pathname: '/(auth)/confirm', params: { email } } as any);
+      }
     } finally {
       setSubmitting(false);
     }

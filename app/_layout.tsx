@@ -1,16 +1,17 @@
 // app/_layout.tsx
-import { Slot } from 'expo-router';
-import { useEffect, useState } from 'react';
-import { initDb } from '../lib/db';
-import { ActivityIndicator, Text, View } from 'react-native';
+import '../lib/amplify';
+import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
+import { Stack } from "expo-router";
+import { useEffect, useState } from "react";
+import { ActivityIndicator, Text, View } from "react-native";
+import { initDb } from "../lib/db"; // si no usas DB, puedes borrar todo lo de DB
 
 function Loader({ message }: { message?: string }) {
   return (
-    <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
       <ActivityIndicator size="large" />
-      {message && (
-        <Text style={{ marginTop: 12, textAlign: 'center' }}>{message}</Text>
-      )}
+      {message && <Text style={{ marginTop: 12, textAlign: "center" }}>{message}</Text>}
     </View>
   );
 }
@@ -22,20 +23,20 @@ export default function RootLayout() {
   useEffect(() => {
     (async () => {
       try {
-        await initDb();
-        if (__DEV__) console.log('[DB] inicializada correctamente');
+        if (initDb) {
+          await initDb();
+          if (__DEV__) console.log("[DB] inicializada correctamente");
+        }
       } catch (e) {
-        console.warn('[DB] init error', e);
-        setError('Error al inicializar la base de datos');
+        console.warn("[DB] init error", e);
+        setError("Error al inicializar la base de datos");
       } finally {
         setReady(true);
       }
     })();
   }, []);
 
-  if (!ready) {
-    return <Loader message={error ?? 'Inicializando base de datos...'} />;
-  }
+  if (!ready) return <Loader message={error ?? "Inicializando..."} />;
 
-  return <Slot />;
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
