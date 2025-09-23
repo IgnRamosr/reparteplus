@@ -1,10 +1,30 @@
-import { Stack } from "expo-router";
+// app/_layout.tsx
+import 'react-native-get-random-values'; // ⬅️ por si este archivo se evalúa muy temprano
+import 'react-native-url-polyfill/auto';
+import { Slot, Stack } from "expo-router";
+import { ActivityIndicator, Text, View } from "react-native";
+
+import '../lib/amplify';
+
 
 export default function RootLayout() {
+
     return (
-    <Stack initialRouteName="CreacionGrupos">
-        <Stack.Screen name="InvitacionParticipantesLink" options={{ headerShown: false }}/>
-        <Stack.Screen name="CreacionGrupos" options={{ headerShown: false }}/>
+    <Stack initialRouteName="index">
+        <Slot/>
     </Stack >
     );
+
+function Loader({ message }: { message?: string }) {
+    return (
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator size="large" />
+        {message && <Text style={{ marginTop: 12, textAlign: "center" }}>{message}</Text>}
+        </View>
+    );
+
 }
+}
+
+
+
