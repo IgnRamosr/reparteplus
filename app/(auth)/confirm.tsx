@@ -1,4 +1,3 @@
-// app/(auth)/confirm.tsx
 import React, { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, TextInput } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";

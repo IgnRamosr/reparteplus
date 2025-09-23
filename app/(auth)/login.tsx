@@ -1,4 +1,3 @@
-// app/(auth)/login.tsx
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, InteractionManager, Pressable, TextInput } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
@@ -32,12 +31,10 @@ export default function LoginScreen() {
 
       await authSignIn(email, data.password);
 
-      // Sólo para “desbloquear” navegación en tu app
       await AsyncStorage.setItem('auth_token', 'cognito');
 
       goHome();
     } catch (e: any) {
-      // Log detallado en la consola de Expo
       console.error('[signIn error raw]', e);
 
       // Traducción de errores típicos de Cognito

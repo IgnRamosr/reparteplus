@@ -3,7 +3,7 @@ import * as SQLite from 'expo-sqlite';
 export type NewUser = {
   email: string;
   phone?: string | null;
-  password: string;          // ⚠️ Solo demo; en producción NO guardes plano
+  password: string;         
   inviteToken?: string | null;
 };
 export type Row = NewUser & { id: number; created_at: string };

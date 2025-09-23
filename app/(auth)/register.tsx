@@ -32,7 +32,6 @@ export default function RegisterScreen() {
       if (Platform.OS === 'web') window.alert(`¡Listo!\n${msg}`); else Alert.alert('¡Listo!', msg);
 
       const email = data.email.trim().toLowerCase();
-      // 👉 Navegación con objeto + params (evita error de tipos)
       router.replace({ pathname: '/(auth)/confirm', params: { email } } as any);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo registrar');

@@ -1,24 +1,20 @@
-// lib/auth.ts
 import {
-  signUp,
-  confirmSignUp,
-  resendSignUpCode,
-  signIn,
-  signOut,
-  resetPassword,
   confirmResetPassword,
+  confirmSignUp,
   fetchAuthSession,
   getCurrentUser,
+  resendSignUpCode,
+  resetPassword,
+  signIn,
+  signOut,
+  signUp,
 } from 'aws-amplify/auth';
 
-// ───────────────────────────────────────────────────────────────────────────────
 // Helpers
 const normEmail = (e: string) => e.trim().toLowerCase();
 const normPwd   = (p: string) => p.trim();
 
 async function waitSession(force = false) {
-  // algunos entornos tardan un tick en exponer tokens tras signIn
-  // hacemos una lectura y, si no hay token, reintentamos brevemente
   const read = async () => (await fetchAuthSession({ forceRefresh: force })) as any;
   let s = await read();
   if (!s?.tokens?.accessToken) {
@@ -32,7 +28,18 @@ async function waitSession(force = false) {
   };
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
+async function getSignedInUsernameLower(): Promise<string | null> {
+  try {
+    const s = await fetchAuthSession();
+    const has = !!s?.tokens?.accessToken;
+    if (!has) return null;
+    const u = await getCurrentUser().catch(() => null as any);
+    return u?.username ? String(u.username).toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 // Registro / Confirmación
 export async function authSignUp(email: string, password: string) {
   email = normEmail(email);
@@ -52,29 +59,57 @@ export async function authResend(email: string) {
   await resendSignUpCode({ username: normEmail(email) });
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
-// Login
+// Login (idempotente y forzando USER_PASSWORD_AUTH)
 export async function authSignIn(email: string, password: string) {
   email = normEmail(email);
   password = normPwd(password);
 
+  // Si ya hay sesión del mismo usuario, tratamos como éxito y no reintentamos
+  try {
+    const current = await getSignedInUsernameLower();
+    if (current && current === email) {
+      return { nextStep: { signInStep: 'DONE' } } as any;
+    }
+    // Si hay sesión de otro usuario, cerramos para evitar choque
+    if (current && current !== email) {
+      await signOut();
+    }
+  } catch {
+    // no-op
+  }
+
   try {
     console.log('[signIn attempt]', email);
-    const res = await signIn({ username: email, password });
-    // Espera/obtiene tokens para que el interceptor tenga el Bearer
-    await waitSession();
-    console.log('[signIn success]');
+
+    const res = await signIn({
+      username: email,
+      password,
+      options: { authFlowType: 'USER_PASSWORD_AUTH' }, // ← forzar PASSWORD
+      // options: { authFlowType: 'USER_SRP_AUTH' },   // (alternativa para probar SRP)
+    });
+
+    await waitSession(); // asegura tokens disponibles
+    console.log('[signIn success]', res?.nextStep);
     return res;
   } catch (e: any) {
+    // Si Amplify devolvió que ya hay sesión, lo tratamos como éxito
+    if (e?.name === 'UserAlreadyAuthenticatedException') {
+      return { nextStep: { signInStep: 'DONE' } } as any;
+    }
+
+    console.error('[signIn error]', {
+      name: e?.name,
+      message: e?.message,
+      code: e?.code,
+      causeName: e?.cause?.name,
+      causeMsg: e?.cause?.message,
+      http: e?.$metadata?.httpStatusCode,
+    });
+
     const name = e?.name || '';
     const msg  = e?.message || '';
 
-    console.error('[signIn error raw]', name, msg);
-
-    // Ya confirmado en UI
     if (name === 'UserNotConfirmedException') throw e;
-
-    // Password incorrecto / política / throttle
     if (name === 'NotAuthorizedException' || name === 'Unknown') {
       throw new Error('Correo o contraseña incorrectos.');
     }
@@ -88,16 +123,13 @@ export async function authSignIn(email: string, password: string) {
       throw new Error('Usuario no encontrado.');
     }
     if (name === 'UserLambdaValidationException') {
-      // por si tienes triggers de pre/post login que rechazan
       throw new Error(msg || 'No se pudo iniciar sesión (política del servidor).');
     }
 
-    // fallback genérico
     throw new Error(msg || 'No se pudo iniciar sesión.');
   }
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
 // Recuperación de contraseña
 export async function authForgot(email: string) {
   await resetPassword({ username: normEmail(email) });
@@ -111,16 +143,16 @@ export async function authReset(email: string, code: string, newPwd: string) {
   });
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
 // Cierre de sesión
 export async function authSignOut() {
-  await signOut();
+  try {
+    await signOut();
+  } catch {}
 }
 
-// ───────────────────────────────────────────────────────────────────────────────
 // Sesión / Usuario actual
 export async function authSession() {
-  return await waitSession(); // reutilizamos el helper
+  return await waitSession();
 }
 
 export async function currentUser() {

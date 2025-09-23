@@ -1,14 +1,14 @@
-// app/home.tsx
-import React, { useEffect } from 'react';
-import { Pressable, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
+import React, { useEffect } from 'react';
+import { Alert, Pressable } from 'react-native';
+import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
 
-import { ThemedView } from '../components/ThemedView';
 import { ThemedText } from '../components/ThemedText';
+import { ThemedView } from '../components/ThemedView';
 
 export default function HomeScreen() {
-  // (Opcional) Pequeño guard: si no hay token, manda a /login
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -43,7 +43,7 @@ export default function HomeScreen() {
       <ThemedText>Has iniciado sesión correctamente.</ThemedText>
 
       <Pressable
-        onPress={() => router.push('/users' as const)} // lista SQLite (dev)
+        onPress={() => router.push('/users' as const)} 
         style={{
           marginTop: 16,
           borderRadius: 10,

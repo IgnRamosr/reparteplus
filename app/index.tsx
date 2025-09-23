@@ -1,8 +1,7 @@
-// app/index.tsx
-import { useEffect } from 'react';
-import { router } from 'expo-router';
-import { InteractionManager } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
+import { useEffect } from 'react';
+import { InteractionManager } from 'react-native';
 
 export default function Index() {
   useEffect(() => {
@@ -11,7 +10,7 @@ export default function Index() {
     const task = InteractionManager.runAfterInteractions(async () => {
       try {
         const token = await AsyncStorage.getItem('auth_token');
-        if (cancelled) return; // evita redirección tras desmontar
+        if (cancelled) return; 
         if (token) {
           router.replace('/home' as const);
         } else {

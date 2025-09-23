@@ -1,41 +1,31 @@
-// lib/amplify.ts
 import { Amplify } from 'aws-amplify';
-import '@aws-amplify/react-native'; // shims para React Native
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const domain  = process.env.EXPO_PUBLIC_COGNITO_DOMAIN;
-const signIn  = process.env.EXPO_PUBLIC_REDIRECT_SIGNIN;
-const signOut = process.env.EXPO_PUBLIC_REDIRECT_SIGNOUT;
 
 Amplify.configure({
   Auth: {
-    // ⚠️ en v6, region va a nivel Auth (no dentro de Cognito)
-    region: process.env.EXPO_PUBLIC_COGNITO_REGION!,
-    storage: AsyncStorage,
+    region: process.env.EXPO_PUBLIC_COGNITO_REGION!,      // us-east-1
 
     Cognito: {
-      userPoolId:       process.env.EXPO_PUBLIC_USER_POOL_ID!,
-      userPoolClientId: process.env.EXPO_PUBLIC_USER_POOL_CLIENT_ID!, // 👈 nombre correcto en v6
-      loginWith: {
-        email: true,
-        username: false,
-        phone: false, // usa "phone", NO "phoneNumber"
-      },
+      userPoolId:       process.env.EXPO_PUBLIC_USER_POOL_ID!,        // us-east-1_dOFVXN6rK
+      userPoolClientId: process.env.EXPO_PUBLIC_USER_POOL_CLIENT_ID!, // 2ellkuj...
+      loginWith: { email: true, username: false, phone: false }
     },
 
-    // (Opcional) Hosted UI / OAuth, solo si tienes dominio
-    ...(domain && signIn && signOut
-      ? {
-          oauth: {
-            domain,
-            scope: ['openid', 'email', 'profile'],
-            redirectSignIn:  signIn,
-            redirectSignOut: signOut,
-            responseType: 'code',
-          },
-        }
-      : {}),
-  } as any, // <-- forzamos tipo para evitar la queja de TS
+    // storage: AsyncStorage, // opcional; el adaptador RN ya provee uno
+    ...(process.env.EXPO_PUBLIC_COGNITO_DOMAIN &&
+      process.env.EXPO_PUBLIC_REDIRECT_SIGNIN &&
+      process.env.EXPO_PUBLIC_REDIRECT_SIGNOUT
+      // ? {
+      //     oauth: {
+      //       domain: process.env.EXPO_PUBLIC_COGNITO_DOMAIN!,
+      //       scope: ['openid', 'email', 'profile'],
+      //       redirectSignIn:  process.env.EXPO_PUBLIC_REDIRECT_SIGNIN!,
+      //       redirectSignOut: process.env.EXPO_PUBLIC_REDIRECT_SIGNOUT!,
+      //       responseType: 'code',
+      //     },
+      //   }
+      // : {}
+      ),
+  } as any,
 });
 
 // Log útil mientras pruebas
