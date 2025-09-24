@@ -11,7 +11,7 @@ import { ThemedView } from '../../components/ThemedView';
 import { authSignIn } from '../../lib/auth';
 
 const goHome = () =>
-  InteractionManager.runAfterInteractions(() => router.replace('/home' as const));
+  InteractionManager.runAfterInteractions(() => router.replace('/MenuPrincipal' as const));
 
 export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);

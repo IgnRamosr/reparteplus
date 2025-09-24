@@ -16,7 +16,7 @@ export default function RegisterScreen() {
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegisterSchema>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: '', email: '', phone: '', password: '', inviteToken },
+    defaultValues: { name: '', email: '', phone: '' , sub_cognito: ''},
   });
 
   const onSubmit = async (data: RegisterSchema) => {
@@ -31,8 +31,14 @@ export default function RegisterScreen() {
         : 'Cuenta creada. Te enviamos un código para confirmar tu email.';
       if (Platform.OS === 'web') window.alert(`¡Listo!\n${msg}`); else Alert.alert('¡Listo!', msg);
 
-      const email = data.email.trim().toLowerCase();
-      router.replace({ pathname: '/(auth)/confirm', params: { email } } as any);
+      const email = data.email.trim()
+      const name = data.name.trim()
+      const phone = data.phone.trim()
+      const password= data.password.trim()
+
+      console.log(email, name, phone, password);
+
+      router.replace({ pathname: '/(auth)/confirm', params: { email, name, phone, password} } as any);
     } catch (e: any) {
       Alert.alert('Error', e?.message || 'No se pudo registrar');
     } finally {

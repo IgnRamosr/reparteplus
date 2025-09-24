@@ -9,7 +9,7 @@ import '../lib/amplify';
 export default function RootLayout() {
 
     return (
-    <Stack initialRouteName="index">
+    <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
         <Slot/>
     </Stack >
     );

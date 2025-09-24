@@ -1,36 +1,41 @@
+// lib/amplify.ts
 import { Amplify } from 'aws-amplify';
+
+// lee envs una vez
+const region          = process.env.EXPO_PUBLIC_COGNITO_REGION!;
+const userPoolId      = process.env.EXPO_PUBLIC_USER_POOL_ID!;
+const userPoolClientId= process.env.EXPO_PUBLIC_USER_POOL_CLIENT_ID!;
+const domain          = process.env.EXPO_PUBLIC_COGNITO_DOMAIN;
+const redirectSignIn  = process.env.EXPO_PUBLIC_REDIRECT_SIGNIN;
+const redirectSignOut = process.env.EXPO_PUBLIC_REDIRECT_SIGNOUT;
 
 Amplify.configure({
   Auth: {
-    region: process.env.EXPO_PUBLIC_COGNITO_REGION!,      // us-east-1
-
+    region,
     Cognito: {
-      userPoolId:       process.env.EXPO_PUBLIC_USER_POOL_ID!,        // us-east-1_dOFVXN6rK
-      userPoolClientId: process.env.EXPO_PUBLIC_USER_POOL_CLIENT_ID!, // 2ellkuj...
-      loginWith: { email: true, username: false, phone: false }
+      userPoolId,
+      userPoolClientId,
+      loginWith: { email: true, username: false, phone: false },
     },
 
-    // storage: AsyncStorage, // opcional; el adaptador RN ya provee uno
-    ...(process.env.EXPO_PUBLIC_COGNITO_DOMAIN &&
-      process.env.EXPO_PUBLIC_REDIRECT_SIGNIN &&
-      process.env.EXPO_PUBLIC_REDIRECT_SIGNOUT
-      // ? {
-      //     oauth: {
-      //       domain: process.env.EXPO_PUBLIC_COGNITO_DOMAIN!,
-      //       scope: ['openid', 'email', 'profile'],
-      //       redirectSignIn:  process.env.EXPO_PUBLIC_REDIRECT_SIGNIN!,
-      //       redirectSignOut: process.env.EXPO_PUBLIC_REDIRECT_SIGNOUT!,
-      //       responseType: 'code',
-      //     },
-      //   }
-      // : {}
-      ),
+    // agrega oauth SOLO si están las tres vars; siempre expandimos un objeto
+    ...(domain && redirectSignIn && redirectSignOut
+      ? {
+          oauth: {
+            domain,
+            redirectSignIn,
+            redirectSignOut,
+            responseType: 'code',
+          },
+        }
+      : {}),
   } as any,
 });
 
 // Log útil mientras pruebas
 console.log('[Amplify config]', {
-  region:   process.env.EXPO_PUBLIC_COGNITO_REGION,
-  poolId:   process.env.EXPO_PUBLIC_USER_POOL_ID,
-  clientId: process.env.EXPO_PUBLIC_USER_POOL_CLIENT_ID,
+  region,
+  poolId: userPoolId,
+  clientId: userPoolClientId,
+  hasOauth: !!(domain && redirectSignIn && redirectSignOut),
 });

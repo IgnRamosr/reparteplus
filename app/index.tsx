@@ -12,7 +12,7 @@ export default function Index() {
         const token = await AsyncStorage.getItem('auth_token');
         if (cancelled) return; 
         if (token) {
-          router.replace('/home' as const);
+          router.replace('/MenuPrincipal' as const);
         } else {
           router.replace('/login' as const);
         }
