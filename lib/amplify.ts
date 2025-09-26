@@ -33,9 +33,9 @@ Amplify.configure({
 });
 
 // Log útil mientras pruebas
-console.log('[Amplify config]', {
-  region,
-  poolId: userPoolId,
-  clientId: userPoolClientId,
-  hasOauth: !!(domain && redirectSignIn && redirectSignOut),
-});
+// console.log('[Amplify config]', {
+//   region,
+//   poolId: userPoolId,
+//   clientId: userPoolClientId,
+//   hasOauth: !!(domain && redirectSignIn && redirectSignOut),
+// });

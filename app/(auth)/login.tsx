@@ -1,4 +1,3 @@
-// app/(auth)/login.tsx
 import React, { useState } from 'react';
 import { ActivityIndicator, Alert, InteractionManager, Pressable, TextInput } from 'react-native';
 import { Controller, useForm } from 'react-hook-form';
@@ -10,9 +9,11 @@ import { loginSchema, type LoginSchema } from '../../lib/validation';
 import { ThemedText } from '../../components/ThemedText';
 import { ThemedView } from '../../components/ThemedView';
 import { authSignIn } from '../../lib/auth';
+import { api } from '@/lib/api';
+import { guardarIdParticipante } from '@/lib/funcionesParticipante';
 
 const goHome = () =>
-  InteractionManager.runAfterInteractions(() => router.replace('/home' as const));
+  InteractionManager.runAfterInteractions(() => router.replace('/MenuPrincipal' as const));
 
 export default function LoginScreen() {
   const [submitting, setSubmitting] = useState(false);
@@ -31,13 +32,19 @@ export default function LoginScreen() {
       console.log('[signIn attempt]', email);
 
       await authSignIn(email, data.password);
+      const datosUsuario = await api.login({
+        email,
+        password: data.password
+      })
 
-      // Sólo para “desbloquear” navegación en tu app
+      await guardarIdParticipante(datosUsuario.participante_id, datosUsuario.email, datosUsuario.nombre);
+
+      // console.log(datosUsuario)
+
       await AsyncStorage.setItem('auth_token', 'cognito');
 
       goHome();
     } catch (e: any) {
-      // Log detallado en la consola de Expo
       console.error('[signIn error raw]', e);
 
       // Traducción de errores típicos de Cognito

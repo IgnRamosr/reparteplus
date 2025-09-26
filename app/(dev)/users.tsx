@@ -1,4 +1,3 @@
-// app/(dev)/users.tsx
 import { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import { clearUsers, getUsers, saveUser } from '../../lib/db';

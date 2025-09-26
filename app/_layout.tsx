@@ -1,5 +1,4 @@
-// app/_layout.tsx
-import 'react-native-get-random-values'; // ⬅️ por si este archivo se evalúa muy temprano
+import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 import { Slot, Stack } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
@@ -10,7 +9,7 @@ import '../lib/amplify';
 export default function RootLayout() {
 
     return (
-    <Stack initialRouteName="index">
+    <Stack initialRouteName="index" screenOptions={{ headerShown: false }}>
         <Slot/>
     </Stack >
     );

@@ -1,4 +1,3 @@
-// app/invite/[token].tsx
 import { useEffect } from 'react';
 import { router, useLocalSearchParams, type Href } from 'expo-router';
 
@@ -11,7 +10,7 @@ export default function InviteRedirect() {
       ? (`/(auth)/register?invite=${encodeURIComponent(t)}` as Href)
       : ('/(auth)/register' as Href);
 
-    const id = setTimeout(() => router.replace(href), 0); // <- clave
+    const id = setTimeout(() => router.replace(href), 0); 
     return () => clearTimeout(id);
   }, [token]);
 

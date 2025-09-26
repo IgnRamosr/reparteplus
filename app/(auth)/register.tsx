@@ -16,7 +16,7 @@ export default function RegisterScreen() {
 
   const { control, handleSubmit, formState: { errors } } = useForm<RegisterSchema>({
     resolver: zodResolver(registerSchema),
-    defaultValues: { name: '', email: '', phone: '', password: '', inviteToken },
+    defaultValues: { name: '', email: '', phone: '' , sub_cognito: ''},
   });
 
   const onSubmit = async (data: RegisterSchema) => {
@@ -31,11 +31,19 @@ export default function RegisterScreen() {
         : 'Cuenta creada. Te enviamos un código para confirmar tu email.';
       if (Platform.OS === 'web') window.alert(`¡Listo!\n${msg}`); else Alert.alert('¡Listo!', msg);
 
-      const email = data.email.trim().toLowerCase();
-      // 👉 Navegación con objeto + params (evita error de tipos)
-      router.replace({ pathname: '/(auth)/confirm', params: { email } } as any);
+      const email = data.email.trim()
+      const name = data.name.trim()
+      const phone = data.phone.trim()
+      const password= data.password.trim()
+
+      // console.log(email, name, phone, password);
+
+      router.replace({ pathname: '/(auth)/confirm', params: { email, name, phone, password} } as any);
     } catch (e: any) {
-      Alert.alert('Error', e?.message || 'No se pudo registrar');
+      if (e?.message === 'User already exists') {
+        Alert.alert('El usuario ya existe. Intenta iniciar sesión o usa otro correo.');}
+      else{
+        Alert.alert('Error', e?.message || 'No se pudo registrar');}
     } finally {
       setSubmitting(false);
     }
@@ -69,7 +77,7 @@ export default function RegisterScreen() {
       )}/>
       {errors.email?.message && <ThemedText style={styles.error}>{errors.email.message}</ThemedText>}
 
-      <ThemedText style={{ marginTop: 12, marginBottom: 8 }}>Teléfono (opcional)</ThemedText>
+      <ThemedText style={{ marginTop: 12, marginBottom: 8 }}>Teléfono</ThemedText>
       <Controller control={control} name="phone" render={({ field }) => (
         <TextInput value={field.value ?? ''} onChangeText={field.onChange} onBlur={field.onBlur}
           keyboardType="phone-pad" placeholder="9 1234 5678" style={styles.input}/>

@@ -93,15 +93,14 @@ const unwrap = <T = any>(res: AxiosResponse<T>): T => {
 function makeRegisterPayload(b: {
   name: string;
   email: string;
-  password: string;
-  phone?: string;
-  inviteToken?: string;
+  phone: string;
+  sub_cognito: string;
 }) {
   return {
     nombre: b.name,
     email: b.email,
-    telefono: b.phone ?? null,
-    invitacion: b.inviteToken ?? null,
+    telefono: b.phone,
+    sub_cognito: b.sub_cognito
   };
 }
 
@@ -120,9 +119,8 @@ export const api = {
   async register(body: {
     name: string;
     email: string;
-    password: string;
-    phone?: string;
-    inviteToken?: string;
+    phone: string;
+    sub_cognito: string;
   }) {
     try {
       if (!REGISTER_URL)

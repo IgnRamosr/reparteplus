@@ -30,11 +30,8 @@ const passwordSchema = z
   .refine((v) => /[^A-Za-z0-9]/.test(v), { message: 'Debe incluir al menos un símbolo' });
 
 /** 🎟️ Token de invitación opcional */
-const inviteTokenSchema = z
+const SubCognitoSchema = z
   .string()
-  .trim()
-  .transform((v) => (v.length === 0 ? undefined : v))
-  .optional();
 
 /** 👤 Nombre requerido */
 const nameSchema = z
@@ -48,8 +45,9 @@ export const registerSchema = z.object({
   name: nameSchema,
   email: baseEmail,
   phone: phoneSchema,
-  password: passwordSchema, // ← usa la misma política que Cognito
-  inviteToken: inviteTokenSchema,
+  password: passwordSchema,
+  sub_cognito: SubCognitoSchema,
+
 });
 export type RegisterSchema = z.infer<typeof registerSchema>;
 
