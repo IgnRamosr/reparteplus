@@ -32,22 +32,13 @@ export default function LoginScreen() {
       console.log('[signIn attempt]', email);
 
       await authSignIn(email, data.password);
-      const datosUsuario = await api.login({
-        email,
-        password: data.password
-      })
+      const datosUsuario = await api.login({ email, password: data.password });
 
       await guardarIdParticipante(datosUsuario.participante_id, datosUsuario.email, datosUsuario.nombre);
-
-      // console.log(datosUsuario)
-
       await AsyncStorage.setItem('auth_token', 'cognito');
-
       goHome();
     } catch (e: any) {
       console.error('[signIn error raw]', e);
-
-      // Traducción de errores típicos de Cognito
       const code = e?.name || e?.__type || 'Unknown';
       const msgMap: Record<string, string> = {
         UserNotConfirmedException: 'Debes confirmar tu cuenta. Revisa tu correo.',
@@ -57,13 +48,10 @@ export default function LoginScreen() {
         InvalidParameterException: 'Parámetros inválidos.',
         TooManyRequestsException: 'Demasiados intentos. Intenta más tarde.',
         LimitExceededException: 'Límite excedido. Intenta más tarde.',
-        // fallback
         Unknown: e?.message || 'Ocurrió un error desconocido.',
       };
       const human = msgMap[code] || (e?.message ?? 'No se pudo iniciar sesión');
       Alert.alert('Error', human);
-
-      // Si está sin confirmar, abre confirmación con el email
       if (code === 'UserNotConfirmedException') {
         router.push({ pathname: '/(auth)/confirm', params: { email } } as any);
       }
@@ -72,59 +60,109 @@ export default function LoginScreen() {
     }
   };
 
+  // ----------- STYLES LedgerTeal -----------
+  const PRIMARY = '#0EA5A4'; // teal
+  const ACCENT = '#F59E0B';  // ámbar
+  const BG = '#F8FBFC';      // azul claro casi blanco
+  const TEXT_MUTED = '#64748B';
+  const BORDER = '#E2E8F0';
+  const ERROR = '#EF4444';
+
   const styles = {
-    input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12 },
-    error: { color: '#d00', marginTop: 4 },
+    screen: { flex: 1, paddingHorizontal: 24, paddingTop: 56, backgroundColor: BG },
+
+    brand: { textAlign: 'center', marginBottom: 4, color: PRIMARY, fontSize: 28, fontWeight: '800' as const },
+    subtitleTop: { textAlign: 'center', marginBottom: 24, color: TEXT_MUTED },
+
+    label: { marginBottom: 8, color: TEXT_MUTED, fontWeight: '600' as const },
+
+    input: {
+      borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, paddingVertical: 12,
+      borderColor: BORDER, backgroundColor: '#FFFFFF', height: 52,
+      shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 }, elevation: 1,
+    },
+
+    error: { color: ERROR, marginTop: 6, fontSize: 12 },
+
     button: {
-      marginTop: 20, borderRadius: 10, paddingVertical: 14,
-      alignItems: 'center', justifyContent: 'center', backgroundColor: 'black',
-      opacity: submitting ? 0.7 : 1,
+      marginTop: 20, borderRadius: 14, paddingVertical: 14,
+      alignItems: 'center', justifyContent: 'center',
+      backgroundColor: PRIMARY,
     },
+    buttonPressed: {
+      backgroundColor: '#14B8A6', // highlight
+      transform: [{ scale: 0.98 }],
+    },
+    buttonText: { color: '#FFFFFF', fontWeight: '700' as const, fontSize: 16 },
+
     secondary: {
-      marginTop: 8, borderRadius: 10, paddingVertical: 14,
-      alignItems: 'center', justifyContent: 'center', backgroundColor: '#111',
-      opacity: submitting ? 0.7 : 1,
+      marginTop: 10, borderRadius: 14, paddingVertical: 14,
+      alignItems: 'center', justifyContent: 'center',
+      backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: BORDER,
     },
+    secondaryPressed: {
+      backgroundColor: '#F0FBFA',
+      transform: [{ scale: 0.98 }],
+    },
+    secondaryText: { color: PRIMARY, fontWeight: '700' as const },
+
+    forgotHint: { textAlign: 'center', marginTop: 14, color: TEXT_MUTED },
+    forgotLink: { textAlign: 'center', color: PRIMARY, fontWeight: '700' as const },
   } as const;
+  // -------------------------------------------------------------------------
 
   return (
-    <ThemedView style={{ flex: 1, paddingHorizontal: 24, paddingTop: 56 }}>
-      <ThemedText type="title" style={{ textAlign: 'center', marginBottom: 4 }}>Reparte+</ThemedText>
-      <ThemedText type="subtitle" style={{ textAlign: 'center', marginBottom: 24 }}>Iniciar Sesión</ThemedText>
+    <ThemedView style={styles.screen}>
+      <ThemedText type="title" style={styles.brand}>Reparte+</ThemedText>
+      <ThemedText type="subtitle" style={styles.subtitleTop}>Iniciar Sesión</ThemedText>
 
-      <ThemedText style={{ marginBottom: 8 }}>Correo electrónico</ThemedText>
+      <ThemedText style={styles.label}>Correo electrónico</ThemedText>
       <Controller control={control} name="email" render={({ field }) => (
         <TextInput
           value={field.value ?? ''} onChangeText={field.onChange} onBlur={field.onBlur}
           autoCapitalize="none" keyboardType="email-address" placeholder="usuario@correo.cl"
+          placeholderTextColor="#9AA3AF"
           style={styles.input} editable={!submitting} returnKeyType="next"
         />
       )}/>
       {errors.email?.message && <ThemedText style={styles.error}>{errors.email.message}</ThemedText>}
 
-      <ThemedText style={{ marginTop: 12, marginBottom: 8 }}>Contraseña</ThemedText>
+      <ThemedText style={[styles.label, { marginTop: 12 }]}>Contraseña</ThemedText>
       <Controller control={control} name="password" render={({ field }) => (
         <TextInput
           value={field.value ?? ''} onChangeText={field.onChange} onBlur={field.onBlur}
-          placeholder="********" secureTextEntry style={styles.input}
+          placeholder="********" placeholderTextColor="#9AA3AF"
+          secureTextEntry style={styles.input}
           editable={!submitting} returnKeyType="go" onSubmitEditing={handleSubmit(onSubmit)}
         />
       )}/>
       {errors.password?.message && <ThemedText style={styles.error}>{errors.password.message}</ThemedText>}
 
-      <Pressable disabled={submitting} onPress={handleSubmit(onSubmit)} style={styles.button}>
-        {submitting ? <ActivityIndicator/> : <ThemedText type="link">Ingresar</ThemedText>}
+      {/* Botón primario con highlight */}
+      <Pressable
+        disabled={submitting}
+        onPress={handleSubmit(onSubmit)}
+        android_ripple={{ color: '#9be7e5' }}
+        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed]}
+      >
+        {submitting
+          ? <ActivityIndicator/>
+          : <ThemedText style={styles.buttonText}>Ingresar</ThemedText>}
       </Pressable>
 
-      <Pressable disabled={submitting} onPress={() => router.push('/register' as const)} style={styles.secondary}>
-        <ThemedText type="link">Crea tu cuenta aquí</ThemedText>
+      {/* Botón secundario con highlight */}
+      <Pressable
+        disabled={submitting}
+        onPress={() => router.push('/register' as const)}
+        android_ripple={{ color: '#E6FFFB' }}
+        style={({ pressed }) => [styles.secondary, pressed && styles.secondaryPressed]}
+      >
+        <ThemedText style={styles.secondaryText}>Crea tu cuenta aquí</ThemedText>
       </Pressable>
 
-      <ThemedText style={{ textAlign: 'center', marginTop: 14, opacity: 0.6 }}>
-        ¿Olvidaste tu contraseña?
-      </ThemedText>
-      <ThemedText type="link" onPress={() => router.push('/forgot' as const)}
-        style={{ textAlign: 'center', color: 'black' }}>
+      <ThemedText style={styles.forgotHint}>¿Olvidaste tu contraseña?</ThemedText>
+      <ThemedText type="link" onPress={() => router.push('/forgot' as const)} style={styles.forgotLink}>
         Recuperarla
       </ThemedText>
     </ThemedView>

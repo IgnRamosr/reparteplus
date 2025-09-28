@@ -1,32 +1,50 @@
+// app/index.tsx
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { router } from 'expo-router';
-import { useEffect } from 'react';
-import { InteractionManager } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Image, StatusBar, StyleSheet, Text, View } from 'react-native';
+
+const TEAL = '#e4ececff';
 
 export default function Index() {
-  useEffect(() => {
-    let cancelled = false;
+  const navigated = useRef(false);
 
-    const task = InteractionManager.runAfterInteractions(async () => {
+  useEffect(() => {
+    (async () => {
       try {
         const token = await AsyncStorage.getItem('auth_token');
-        if (cancelled) return; 
-        if (token) {
-          router.replace('/MenuPrincipal' as const);
-        } else {
-          router.replace('/login' as const);
-        }
-      } catch (e) {
-        console.warn('[Index] Error leyendo token:', e);
-        if (!cancelled) router.replace('/login' as const);
-      }
-    });
+        if (navigated.current) return;
 
-    return () => {
-      cancelled = true;
-      (task as any)?.cancel?.();
-    };
+        // 👇 Espera 12000ms antes de navegar (12 segundos)
+        setTimeout(() => {
+          if (!navigated.current) {
+            navigated.current = true;
+            router.replace(token ? '/MenuPrincipal' : '/login');
+          }
+        }, 12000);
+      } catch {
+        if (!navigated.current) {
+          navigated.current = true;
+          router.replace('/login');
+        }
+      }
+    })();
   }, []);
 
-  return null;
+  return (
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor={TEAL} />
+      <View style={styles.hero}>
+        <Image source={require('assets/images/logo.png')} style={styles.image} resizeMode="contain" />
+        <Text style={styles.tagline}>¡Porque compartir es más fácil que nunca!</Text>
+      </View>
+    </View>
+  );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: TEAL, alignItems: 'center', justifyContent: 'center' },
+  hero: { width: '78%', alignItems: 'center', gap: 12 },
+  image: { width: '100%', height: 200 },
+  tagline: { textAlign: 'center', fontSize: 18, fontWeight: '700', color: '#0c0a0aff' },
+});

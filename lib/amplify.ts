@@ -1,5 +1,8 @@
 // lib/amplify.ts
-import { Amplify } from 'aws-amplify';
+import 'react-native-get-random-values';
+import 'react-native-url-polyfill/auto';
+
+import { Amplify} from 'aws-amplify';
 
 // lee envs una vez
 const region          = process.env.EXPO_PUBLIC_COGNITO_REGION!;

@@ -22,12 +22,7 @@ const toYMD = (d: Date) => {
 export default function CrearGrupo() {
   // --------- Params y modo ---------
   const params = useLocalSearchParams<{
-    modo?: string;           // 'crear' | 'editar'
-    id?: string;             // id del grupo cuando editas
-    nombre?: string;
-    descripcion?: string;
-    fecha_inicio?: string;   // 'YYYY-MM-DD'
-    fecha_cierre?: string;
+    modo?: string; id?: string; nombre?: string; descripcion?: string; fecha_inicio?: string; fecha_cierre?: string;
   }>();
 
   const modoEdicion = (params.modo ?? '').toLowerCase() === 'editar';
@@ -37,7 +32,6 @@ export default function CrearGrupo() {
   const [participanteId, setParticipanteId] = useState<number | null>(null);
   const [enviando, setEnviando] = useState(false);
 
-  // precarga
   const [nombreGrupo, setNombreGrupo] = useState(params.nombre ?? '');
   const [descripcionGrupo, setDescripcionGrupo] = useState(params.descripcion ?? '');
 
@@ -48,11 +42,9 @@ export default function CrearGrupo() {
     params.fecha_cierre ? new Date(params.fecha_cierre) : null
   );
 
-  // mostrar pickers
   const [showInicio, setShowInicio] = useState(false);
   const [showTermino, setShowTermino] = useState(false);
 
-  // cargar participante solo si estamos creando (lo necesitas para el payload de POST)
   useEffect(() => {
     if (modoEdicion) return;
     (async () => {
@@ -94,15 +86,9 @@ export default function CrearGrupo() {
 
     try {
       const nombreGrupoLimpio = nombreGrupo.trim();
-      if (!fechaInicio || !fechaTermino) return; // guardrail
+      if (!fechaInicio || !fechaTermino) return;
 
       if (modoEdicion) {
-        // ================= EDITAR (PATCH /grupo con id en el body) =================
-        if (!grupoId) {
-          Alert.alert('Error', 'No se encontró el ID del grupo a editar.');
-          return;
-        }
-
         const updates = {
           nombre: nombreGrupoLimpio,
           descripcion: descripcionGrupo.trim(),
@@ -110,17 +96,12 @@ export default function CrearGrupo() {
           fecha_cierre: toYMD(fechaTermino)
         };
 
-        // respeta el casing EXACTO que espera tu backend: "grupoId"
-        const body = {
-          grupoId: Number(grupoId),
-          updates
-        };
-
+        const body = { grupoId: Number(grupoId), updates };
         const resp = await api.patch('/grupo', body);
 
         if (resp.status >= 200 && resp.status < 300) {
           router.replace({
-            pathname: '/DetalleGrupo', // ajusta si tu ruta real es '/grupos/[id]'
+            pathname: '/DetalleGrupo',
             params: {
               id: String(grupoId),
               nombre: updates.nombre,
@@ -133,7 +114,6 @@ export default function CrearGrupo() {
           Alert.alert('Error', `(${resp.status}) ${resp.data?.message ?? 'No se pudo actualizar el grupo.'}`);
         }
       } else {
-        // ================= CREAR (POST /grupo) =================
         const payload = {
           nombre: nombreGrupoLimpio,
           descripcion: descripcionGrupo.trim(),
@@ -146,14 +126,13 @@ export default function CrearGrupo() {
 
         if (resp.status >= 200 && resp.status < 300) {
           const nuevoId: number | string = resp.data?.grupoId ?? resp.data?.id;
-
           if (!nuevoId) {
             Alert.alert('OK', 'Grupo creado, pero no recibí el ID. Ve a la lista para verlo.');
             return;
           }
 
           router.replace({
-            pathname: '/DetalleGrupo', // ajusta si tu ruta real es '/grupos/[id]'
+            pathname: '/DetalleGrupo',
             params: {
               id: String(nuevoId),
               nombre: payload.nombre,
@@ -177,12 +156,10 @@ export default function CrearGrupo() {
   // --------- Render ---------
   return (
     <View style={estilos.container}>
-      <View style={{ position: 'absolute', top: 0, justifyContent: 'center', margin: '10%' }}>
-        <View style={{ width: '100%', flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: 'black', fontSize: 40, fontWeight: 'bold' }}>Reparte+</Text>
-          <Text style={{ color: 'black', fontSize: 20, fontWeight: 'bold' }}>
-            {modoEdicion ? 'Editar grupo' : 'Creación de grupos'}
-          </Text>
+      <View style={estilos.header}>
+        <View style={estilos.headerInner}>
+          <Text style={estilos.brand}>Reparte+</Text>
+          <Text style={estilos.title}>{modoEdicion ? 'Editar grupo' : 'Creación de grupos'}</Text>
         </View>
       </View>
 
@@ -192,6 +169,7 @@ export default function CrearGrupo() {
         <TextInput
           onChangeText={setNombreGrupo}
           placeholder="Ej: Viaje a Pucón"
+          placeholderTextColor="#9AA3AF"
           maxLength={40}
           style={estilos.input}
           value={nombreGrupo}
@@ -202,6 +180,7 @@ export default function CrearGrupo() {
         <TextInput
           onChangeText={setDescripcionGrupo}
           placeholder="Descripción del grupo"
+          placeholderTextColor="#9AA3AF"
           multiline
           maxLength={200}
           style={[estilos.input, { height: 88 }]}
@@ -210,8 +189,12 @@ export default function CrearGrupo() {
 
         {/* Fecha de inicio */}
         <Text style={estilos.label}>Fecha de inicio</Text>
-        <Pressable onPress={() => setShowInicio(true)} style={estilos.inputLike}>
-          <Text style={{ color: formatCL(fechaInicio) ? '#111827' : '#9ca3af' }}>
+        <Pressable
+          onPress={() => setShowInicio(true)}
+          android_ripple={{ color: 'rgba(14,165,164,0.10)' }}
+          style={({ pressed }) => [estilos.inputLike, pressed && estilos.inputLikePressed]}
+        >
+          <Text style={{ color: formatCL(fechaInicio) ? TEXT : '#9CA3AF' }}>
             {formatCL(fechaInicio) || 'dd/mm/aaaa'}
           </Text>
           <Text style={estilos.iconoCalendario}>📅</Text>
@@ -219,14 +202,18 @@ export default function CrearGrupo() {
 
         {/* Fecha de término */}
         <Text style={estilos.label}>Fecha de término</Text>
-        <Pressable onPress={() => setShowTermino(true)} style={estilos.inputLike}>
-          <Text style={{ color: formatCL(fechaTermino) ? '#111827' : '#9ca3af' }}>
+        <Pressable
+          onPress={() => setShowTermino(true)}
+          android_ripple={{ color: 'rgba(14,165,164,0.10)' }}
+          style={({ pressed }) => [estilos.inputLike, pressed && estilos.inputLikePressed]}
+        >
+          <Text style={{ color: formatCL(fechaTermino) ? TEXT : '#9CA3AF' }}>
             {formatCL(fechaTermino) || 'dd/mm/aaaa'}
           </Text>
           <Text style={estilos.iconoCalendario}>📅</Text>
         </Pressable>
 
-        {/* Pickers nativos */}
+        {/* Pickers */}
         {showInicio && (
           <DateTimePicker
             value={fechaInicio ?? new Date()}
@@ -252,21 +239,15 @@ export default function CrearGrupo() {
             <Pressable
               onPress={onSubmit}
               disabled={!formValido || enviando || (!modoEdicion && participanteId == null)}
+              android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
               style={({ pressed }) => [
-                estilos.botonCrearGrupo,
-                (!formValido || enviando || (!modoEdicion && participanteId == null)) &&
-                  estilos.botonCrearGrupoDeshabilitado,
-                pressed && formValido && !enviando && estilos.botonCrearGrupoPresionado
+                estilos.btnPrimary,
+                (!formValido || enviando || (!modoEdicion && participanteId == null)) && { opacity: 0.6 },
+                pressed && formValido && !enviando && estilos.btnPrimaryPressed
               ]}
             >
-              <Text style={{ color: '#fff', fontWeight: 'bold' }}>
-                {enviando
-                  ? modoEdicion
-                    ? 'Guardando…'
-                    : 'Creando…'
-                  : modoEdicion
-                  ? 'Guardar cambios'
-                  : 'Crear'}
+              <Text style={estilos.btnPrimaryText}>
+                {enviando ? (modoEdicion ? 'Guardando…' : 'Creando…') : (modoEdicion ? 'Guardar cambios' : 'Crear')}
               </Text>
             </Pressable>
           </View>
@@ -276,54 +257,100 @@ export default function CrearGrupo() {
   );
 }
 
+// ====== SOLO ESTILOS LedgerTeal ======
+const PRIMARY = '#0EA5A4'; // teal
+const BG = '#F8FBFC';      // casi blanco azulado
+const TEXT = '#0F172A';
+const TEXT_MUTED = '#64748B';
+const BORDER = '#E2E8F0';
+const CARD = '#FFFFFF';
+
 const estilos = StyleSheet.create({
-  container: { backgroundColor: '#f8fafc', justifyContent: 'center', alignItems: 'center', flex: 1 },
-  label: {
-    alignItems: 'flex-start',
-    color: 'black',
-    fontSize: 20,
-    fontWeight: '600',
-    marginLeft: '5%'
+  container: {
+    backgroundColor: BG,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 24,
   },
+
+  header: { position: 'absolute', top: 0, left: 0, right: 0, paddingVertical: 20 },
+  headerInner: { width: '100%', alignItems: 'center', gap: 6 },
+  brand: { color: PRIMARY, fontSize: 34, fontWeight: '800' },
+  title: { color: TEXT_MUTED, fontSize: 18, fontWeight: '700' },
+
+  label: {
+    color: TEXT_MUTED,
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: '5%',
+  },
+
   input: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
+    borderColor: BORDER,
+    borderRadius: 14,
     padding: 12,
     width: '90%',
     marginLeft: '5%',
-    backgroundColor: '#ffffff'
+    backgroundColor: CARD,
+    height: 52,
+    // sombra suave
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
+
   inputLike: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 8,
+    borderColor: BORDER,
+    borderRadius: 14,
     paddingVertical: 12,
     paddingHorizontal: 12,
     width: '90%',
     marginLeft: '5%',
-    backgroundColor: '#ffffff',
+    backgroundColor: CARD,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  iconoCalendario: { fontSize: 18, marginLeft: 8 },
-  botonCrearGrupo: {
-    marginTop: 16,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: 'black',
     alignItems: 'center',
-    justifyContent: 'center'
+    height: 52,
+    // sombra suave
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
-  botonCrearGrupoDeshabilitado: {
+  // 👇 highlight para los "inputs" de fecha
+  inputLikePressed: {
+    backgroundColor: '#F0FBFA',
+    transform: [{ scale: 0.99 }],
+  },
+
+  iconoCalendario: { fontSize: 18, marginLeft: 8 },
+
+  btnPrimary: {
     marginTop: 16,
-    height: 48,
-    borderRadius: 15,
-    backgroundColor: 'black',
+    height: 50,
+    borderRadius: 16,
+    backgroundColor: PRIMARY,
     alignItems: 'center',
     justifyContent: 'center',
-    opacity: 0.5
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  botonCrearGrupoPresionado: { opacity: 0.85, transform: [{ scale: 0.99 }] }
+  // 👇 highlight del botón principal
+  btnPrimaryPressed: {
+    backgroundColor: '#14B8A6',
+    transform: [{ scale: 0.98 }],
+    shadowOpacity: 0.12,
+    elevation: 3,
+  },
+  btnPrimaryText: { color: '#fff', fontWeight: '700', fontSize: 16 },
 });

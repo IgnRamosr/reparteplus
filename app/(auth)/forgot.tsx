@@ -12,13 +12,52 @@ export default function ForgotPasswordScreen() {
   const [newPwd, setNewPwd] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // ======= SOLO ESTILOS: LedgerTeal =======
+  const PRIMARY = '#0EA5A4'; // teal
+  const BG = '#F8FBFC';      // casi blanco azulado
+  const TEXT_MUTED = '#64748B';
+  const BORDER = '#E2E8F0';
+
   const styles = {
-    input: { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12, marginTop: 10 },
-    button: {
-      marginTop: 16, borderRadius: 10, paddingVertical: 14,
-      alignItems: 'center', justifyContent: 'center', backgroundColor: 'black',
+    screen: { flex: 1, paddingHorizontal: 24, paddingTop: 56, backgroundColor: BG },
+
+    brand: { textAlign: 'center', marginBottom: 4, color: PRIMARY, fontSize: 28, fontWeight: '800' as const },
+    subtitleTop: { textAlign: 'center', marginBottom: 24, color: TEXT_MUTED },
+
+    label: { marginBottom: 8, color: TEXT_MUTED, fontWeight: '600' as const },
+
+    input: {
+      borderWidth: 1,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderColor: BORDER,
+      backgroundColor: '#FFFFFF',
+      height: 52,
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 1,
+      marginTop: 10,
     },
+
+    button: {
+      marginTop: 16,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: PRIMARY,
+    },
+    // highlight al presionar
+    buttonPressed: {
+      backgroundColor: '#14B8A6',
+      transform: [{ scale: 0.98 }],
+    },
+    buttonText: { color: '#FFFFFF', fontWeight: '700' as const, fontSize: 16 },
   } as const;
+  // ========================================
 
   const send = async () => {
     if (!email) return Alert.alert('Email requerido');
@@ -45,28 +84,49 @@ export default function ForgotPasswordScreen() {
   };
 
   return (
-    <ThemedView style={{ flex: 1, paddingHorizontal: 24, paddingTop: 56 }}>
-      <ThemedText type="title" style={{ textAlign: 'center', marginBottom: 4 }}>Reparte+</ThemedText>
-      <ThemedText type="subtitle" style={{ textAlign: 'center', marginBottom: 24 }}>
+    <ThemedView style={styles.screen}>
+      <ThemedText type="title" style={styles.brand}>Reparte+</ThemedText>
+      <ThemedText type="subtitle" style={styles.subtitleTop}>
         Recuperar contraseña
       </ThemedText>
 
-      <ThemedText>Correo electrónico</ThemedText>
-      <TextInput value={email} onChangeText={setEmail}
-        autoCapitalize="none" keyboardType="email-address" placeholder="usuario@correo.cl" style={styles.input} />
+      <ThemedText style={styles.label}>Correo electrónico</ThemedText>
+      <TextInput
+        value={email} onChangeText={setEmail}
+        autoCapitalize="none" keyboardType="email-address"
+        placeholder="usuario@correo.cl" placeholderTextColor="#9AA3AF"
+        style={styles.input}
+      />
 
       {sent && (
         <>
-          <ThemedText style={{ marginTop: 10 }}>Código</ThemedText>
-          <TextInput value={code} onChangeText={setCode} placeholder="123456"
-            keyboardType="number-pad" style={styles.input} />
-          <ThemedText style={{ marginTop: 10 }}>Nueva contraseña</ThemedText>
-          <TextInput value={newPwd} onChangeText={setNewPwd} placeholder="********" secureTextEntry style={styles.input} />
+          <ThemedText style={[styles.label, { marginTop: 10 }]}>Código</ThemedText>
+          <TextInput
+            value={code} onChangeText={setCode}
+            placeholder="123456" placeholderTextColor="#9AA3AF"
+            keyboardType="number-pad" style={styles.input}
+          />
+          <ThemedText style={[styles.label, { marginTop: 10 }]}>Nueva contraseña</ThemedText>
+          <TextInput
+            value={newPwd} onChangeText={setNewPwd}
+            placeholder="********" placeholderTextColor="#9AA3AF"
+            secureTextEntry style={styles.input}
+          />
         </>
       )}
 
-      <Pressable disabled={busy} onPress={sent ? confirm : send} style={styles.button}>
-        {busy ? <ActivityIndicator /> : <ThemedText type="link">{sent ? 'Confirmar nueva contraseña' : 'Enviar código'}</ThemedText>}
+      {/* Botón con highlight */}
+      <Pressable
+        disabled={busy}
+        onPress={sent ? confirm : send}
+        android_ripple={{ color: '#9be7e5' }}
+        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, busy ? { opacity: 0.7 } : null]}
+      >
+        {busy
+          ? <ActivityIndicator />
+          : <ThemedText type="link" style={styles.buttonText}>
+              {sent ? 'Confirmar nueva contraseña' : 'Enviar código'}
+            </ThemedText>}
       </Pressable>
     </ThemedView>
   );

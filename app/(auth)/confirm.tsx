@@ -1,130 +1,204 @@
-    import React, { useState } from "react";
-    import { ActivityIndicator, Alert, Pressable, TextInput } from "react-native";
-    import { useLocalSearchParams, router } from "expo-router";
-    import { ThemedText } from "../../components/ThemedText";
-    import { ThemedView } from "../../components/ThemedView";
+import React, { useState } from "react";
+import { ActivityIndicator, Alert, Pressable, TextInput } from "react-native";
+import { useLocalSearchParams, router } from "expo-router";
+import { ThemedText } from "../../components/ThemedText";
+import { ThemedView } from "../../components/ThemedView";
 
-    import {
-    authConfirm,
-    authResend,
-    getCognitoSub,
-    authSignIn,   // 👈 añadido
-    // authSignOut, // si luego quieres cerrar sesión, lo tienes disponible
-    } from "../../lib/auth";
-    import { api } from "../../lib/api";
+import {
+  authConfirm,
+  authResend,
+  getCognitoSub,
+  authSignIn,   // 👈 añadido
+  // authSignOut,
+} from "../../lib/auth";
+import { api } from "../../lib/api";
 
-    export default function ConfirmScreen() {
-    const {
-        email: initialEmail,
-        name: initialName,
-        phone: initialPhone,
-        // 👇 password que envías desde la pantalla de registro
-        password: initialPassword,
-    } = useLocalSearchParams<{
-        email?: string; name?: string; phone?: string; password?: string;
-    }>();
+export default function ConfirmScreen() {
+  const {
+    email: initialEmail,
+    name: initialName,
+    phone: initialPhone,
+    password: initialPassword,
+  } = useLocalSearchParams<{
+    email?: string; name?: string; phone?: string; password?: string;
+  }>();
 
-    const [email, setEmail] = useState((initialEmail ?? "").toString());
-    const [name, setName]   = useState((initialName ?? "").toString());
-    const [phone, setPhone] = useState((initialPhone ?? "").toString());
-    const [password]             = useState((initialPassword ?? "").toString());
-    const [code, setCode]   = useState("");
-    const [busy, setBusy]   = useState(false);
+  const [email, setEmail] = useState((initialEmail ?? "").toString());
+  const [name, setName]   = useState((initialName ?? "").toString());
+  const [phone, setPhone] = useState((initialPhone ?? "").toString());
+  const [password]        = useState((initialPassword ?? "").toString());
+  const [code, setCode]   = useState("");
+  const [busy, setBusy]   = useState(false);
 
-    const styles = {
-        input:  { borderWidth: 1, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 12, marginTop: 10 },
-        button: { marginTop: 16, borderRadius: 10, paddingVertical: 14, alignItems: "center", justifyContent: "center", backgroundColor: "black" },
-        secondary: { marginTop: 8, borderRadius: 10, paddingVertical: 12, alignItems: "center", justifyContent: "center", backgroundColor: "#111" },
-    } as const;
+  // ========= SOLO ESTILOS: LedgerTeal =========
+  const PRIMARY = '#0EA5A4'; // teal
+  const BG = '#F8FBFC';      // casi blanco azulado
+  const TEXT_MUTED = '#64748B';
+  const BORDER = '#E2E8F0';
 
-    const doConfirm = async () => {
-        if (!email || !code) return Alert.alert("Faltan datos", "Ingresa email y código");
+  const styles = {
+    screen: { flex: 1, paddingHorizontal: 24, paddingTop: 56, backgroundColor: BG },
 
-        try {
-        setBusy(true);
+    brand: { textAlign: "center", marginBottom: 4, color: PRIMARY, fontSize: 28, fontWeight: '800' as const },
+    subtitleTop: { textAlign: "center", marginBottom: 24, color: TEXT_MUTED },
 
-        const emailNorm = email.trim().toLowerCase();
+    label: { marginTop: 10, marginBottom: 6, color: TEXT_MUTED, fontWeight: '600' as const },
 
-        // 1) Confirmar en Cognito
-        await authConfirm(emailNorm, code.trim());
+    input: {
+      borderWidth: 1,
+      borderRadius: 14,
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      borderColor: BORDER,
+      backgroundColor: '#FFFFFF',
+      height: 52,
+      shadowColor: '#000',
+      shadowOpacity: 0.05,
+      shadowRadius: 6,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 1,
+      marginTop: 4,
+    },
 
-        // 2) Si tenemos la password, iniciamos sesión para obtener el sub
-        if (password) {
-            await authSignIn(emailNorm, password);
+    button: {
+      marginTop: 16,
+      borderRadius: 14,
+      paddingVertical: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: PRIMARY,
+    },
+    // 👇 highlight al presionar
+    buttonPressed: {
+      backgroundColor: '#14B8A6',
+      transform: [{ scale: 0.98 }],
+    },
+    buttonText: { color: '#FFFFFF', fontWeight: '700' as const, fontSize: 16 },
 
-            // 3) Obtener sub y registrar en tu API
-            const sub = await getCognitoSub();
-            if (!sub) throw new Error("No se pudo obtener el sub de Cognito");
+    secondary: {
+      marginTop: 8,
+      borderRadius: 14,
+      paddingVertical: 12,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "#FFFFFF",
+      borderWidth: 1,
+      borderColor: BORDER,
+    },
+    secondaryPressed: {
+      backgroundColor: '#F0FBFA',
+      transform: [{ scale: 0.98 }],
+    },
+    secondaryText: { color: PRIMARY, fontWeight: '700' as const },
+  } as const;
+  // ===========================================
 
-            // console.log(name,email,password,sub);
+  const doConfirm = async () => {
+    if (!email || !code) return Alert.alert("Faltan datos", "Ingresa email y código");
 
-            await api.register({
-            name,
-            email: emailNorm,
-            phone,          // tu API lo espera como string
-            sub_cognito: sub // 👈 usa el sub real obtenido tras el sign-in
-            });
+    try {
+      setBusy(true);
 
-            // 4) Mantén la sesión iniciada y navega al menú principal
-            router.replace("/MenuPrincipal" as const); // ajusta la ruta si tu pantalla se llama diferente
-            Alert.alert("Cuenta confirmada", "Registro completado.");
-            return;
-        }else{console.log('No hay contraseña')}
+      const emailNorm = email.trim().toLowerCase();
 
-        // Si no tenemos la password, pedimos iniciar sesión para completar registro allí
-        Alert.alert("Cuenta confirmada", "Ahora inicia sesión para completar el registro.");
-        router.replace("/(auth)/login" as const);
-        } catch (e: any) {
-        Alert.alert("Error", e?.message ?? "No se pudo confirmar/registrar");
-        } finally {
-        setBusy(false);
-        }
-    };
+      // 1) Confirmar en Cognito
+      await authConfirm(emailNorm, code.trim());
 
-    const doResend = async () => {
-        if (!email) return Alert.alert("Email requerido", "Ingresa tu correo");
-        try {
-        setBusy(true);
-        await authResend(email.trim().toLowerCase());
-        Alert.alert("Código reenviado", "Revisa tu correo.");
-        } catch (e: any) {
-        Alert.alert("Error", e?.message ?? "No se pudo reenviar el código");
-        } finally {
-        setBusy(false);
-        }
-    };
+      // 2) Si tenemos la password, iniciamos sesión para obtener el sub
+      if (password) {
+        await authSignIn(emailNorm, password);
 
-    return (
-        <ThemedView style={{ flex: 1, paddingHorizontal: 24, paddingTop: 56 }}>
-        <ThemedText type="title" style={{ textAlign: "center", marginBottom: 4 }}>Reparte+</ThemedText>
-        <ThemedText type="subtitle" style={{ textAlign: "center", marginBottom: 24 }}>Confirmar cuenta</ThemedText>
+        // 3) Obtener sub y registrar en tu API
+        const sub = await getCognitoSub();
+        if (!sub) throw new Error("No se pudo obtener el sub de Cognito");
 
-        <ThemedText>Correo electrónico</ThemedText>
-        <TextInput
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="usuario@correo.cl"
-            style={styles.input}
-        />
+        await api.register({
+          name,
+          email: emailNorm,
+          phone,          // tu API lo espera como string
+          sub_cognito: sub // 👈 usa el sub real obtenido tras el sign-in
+        });
 
-        <ThemedText style={{ marginTop: 10 }}>Código de verificación</ThemedText>
-        <TextInput
-            value={code}
-            onChangeText={setCode}
-            placeholder="123456"
-            keyboardType="number-pad"
-            style={styles.input}
-        />
+        // 4) Mantén la sesión iniciada y navega al menú principal
+        router.replace("/MenuPrincipal" as const);
+        Alert.alert("Cuenta confirmada", "Registro completado.");
+        return;
+      } else {
+        console.log('No hay contraseña');
+      }
 
-        <Pressable disabled={busy} onPress={doConfirm} style={styles.button}>
-            {busy ? <ActivityIndicator /> : <ThemedText type="link">Confirmar</ThemedText>}
-        </Pressable>
-
-        <Pressable disabled={busy} onPress={doResend} style={styles.secondary}>
-            {busy ? <ActivityIndicator /> : <ThemedText type="link">Reenviar código</ThemedText>}
-        </Pressable>
-        </ThemedView>
-    );
+      // Si no tenemos la password, pedimos iniciar sesión
+      Alert.alert("Cuenta confirmada", "Ahora inicia sesión para completar el registro.");
+      router.replace("/(auth)/login" as const);
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo confirmar/registrar");
+    } finally {
+      setBusy(false);
     }
+  };
+
+  const doResend = async () => {
+    if (!email) return Alert.alert("Email requerido", "Ingresa tu correo");
+    try {
+      setBusy(true);
+      await authResend(email.trim().toLowerCase());
+      Alert.alert("Código reenviado", "Revisa tu correo.");
+    } catch (e: any) {
+      Alert.alert("Error", e?.message ?? "No se pudo reenviar el código");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ThemedView style={styles.screen}>
+      <ThemedText type="title" style={styles.brand}>Reparte+</ThemedText>
+      <ThemedText type="subtitle" style={styles.subtitleTop}>Confirmar cuenta</ThemedText>
+
+      <ThemedText style={styles.label}>Correo electrónico</ThemedText>
+      <TextInput
+        value={email}
+        onChangeText={setEmail}
+        autoCapitalize="none"
+        keyboardType="email-address"
+        placeholder="usuario@correo.cl"
+        placeholderTextColor="#9AA3AF"
+        style={styles.input}
+      />
+
+      <ThemedText style={styles.label}>Código de verificación</ThemedText>
+      <TextInput
+        value={code}
+        onChangeText={setCode}
+        placeholder="123456"
+        placeholderTextColor="#9AA3AF"
+        keyboardType="number-pad"
+        style={styles.input}
+      />
+
+      {/* Botón Confirmar con highlight */}
+      <Pressable
+        disabled={busy}
+        onPress={doConfirm}
+        android_ripple={{ color: '#9be7e5' }}
+        style={({ pressed }) => [styles.button, pressed && styles.buttonPressed, busy ? { opacity: 0.7 } : null]}
+      >
+        {busy ? <ActivityIndicator /> : (
+          <ThemedText type="link" style={styles.buttonText}>Confirmar</ThemedText>
+        )}
+      </Pressable>
+
+      {/* Botón Reenviar con highlight */}
+      <Pressable
+        disabled={busy}
+        onPress={doResend}
+        android_ripple={{ color: '#E6FFFB' }}
+        style={({ pressed }) => [styles.secondary, pressed && styles.secondaryPressed, busy ? { opacity: 0.7 } : null]}
+      >
+        {busy ? <ActivityIndicator /> : (
+          <ThemedText type="link" style={styles.secondaryText}>Reenviar código</ThemedText>
+        )}
+      </Pressable>
+    </ThemedView>
+  );
+}

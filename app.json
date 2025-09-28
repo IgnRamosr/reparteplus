@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "Reparteplus",
+    "name": "!Compartir es más Facil que Nunca!",
     "slug": "Reparteplus",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "reparteplus",
+    "icon": "assets/images/logo.png",
+    "scheme": "Reparteplus",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
@@ -13,23 +13,23 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "assets/images/adaptive-icon.png",
+        "backgroundColor": "#008080"
       }
     },
     "edgeToEdgeEnabled": true,
     "web": {
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "assets/images/favicon.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "image": "./assets/images/splash-icon.png",
+          "image": "assets/images/logo.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#008080"
         }
       ],
       "expo-sqlite"
@@ -37,12 +37,8 @@
     "experiments": {
       "typedRoutes": true
     },
-
     "extra": {
       "EXPO_PUBLIC_API_URL": "http://localhost:3333"
     }
   }
 }
-
-
-

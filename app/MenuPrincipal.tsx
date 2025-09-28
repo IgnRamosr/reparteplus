@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { authSignOut } from '../lib/auth'; // usa tu función si ya la tienes
+import { authSignOut } from '../lib/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { borrarIDparticipante } from '@/lib/funcionesParticipante';
 
@@ -34,99 +34,152 @@ export default function MenuPrincipal() {
         <Text style={estilos.titulo}>Reparte+</Text>
         <Text style={estilos.subtitulo}>Menú Principal</Text>
 
-        {/* Ícono cerrar sesión (arriba a la derecha) */}
+        {/* Ícono cerrar sesión */}
         <Pressable
           onPress={handleLogout}
-          style={estilos.logoutBtn}
+          style={({ pressed }) => [estilos.logoutBtn, pressed && estilos.logoutBtnPressed]}
           hitSlop={10}
-          android_ripple={{ color: 'rgba(0,0,0,0.12)', borderless: true }}
+          android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}
           accessibilityLabel="Cerrar sesión"
         >
-          {/* puedes usar "logout" o "logout-variant" */}
-          <MaterialCommunityIcons name="logout" size={26} color="#111827" />
+          <MaterialCommunityIcons name="logout" size={26} color="#0F172A" />
         </Pressable>
       </View>
 
-      {/* Crear Grupo */}
-      <Pressable style={estilos.boton} onPress={() => router.push('/CreacionGrupos')}>
+      {/* Crear Grupo (PRIMARIO) */}
+      <Pressable
+        onPress={() => router.push('/CreacionGrupos')}
+        android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
+        style={({ pressed }) => [estilos.boton, pressed && estilos.botonPressed]}
+      >
         <View style={estilos.row}>
           <MaterialCommunityIcons name="plus" size={20} color="#fff" />
           <Text style={estilos.botonTexto}>Crear grupo</Text>
         </View>
       </Pressable>
 
-      {/* Pagar saldo pendiente */}
-      <Pressable style={[estilos.boton, estilos.botonSec]}>
+      {/* Pagar saldo pendiente (SECUNDARIO outline) */}
+      <Pressable
+        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
+      >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="currency-usd" size={20} color="#fff" />
-          <Text style={estilos.botonTexto}>Pagar saldo pendiente</Text>
+          <MaterialCommunityIcons name="currency-usd" size={20} color={PRIMARY} />
+          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Pagar saldo pendiente</Text>
         </View>
       </Pressable>
 
-      {/* Registrar gasto */}
-      <Pressable style={[estilos.boton, estilos.botonSec]}>
+      {/* Registrar gasto (SECUNDARIO outline) */}
+      <Pressable
+        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
+      >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="note-edit-outline" size={20} color="#fff" />
-          <Text style={estilos.botonTexto}>Registrar gasto</Text>
+          <MaterialCommunityIcons name="note-edit-outline" size={20} color={PRIMARY} />
+          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Registrar gasto</Text>
         </View>
       </Pressable>
 
-      {/* Añadir participantes */}
-      <Pressable style={estilos.boton} onPress={() => router.push('/InvitacionParticipantesGeneral')}>
+      {/* Añadir participantes (PRIMARIO) */}
+      <Pressable
+        onPress={() => router.push('/InvitacionParticipantesGeneral')}
+        android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
+        style={({ pressed }) => [estilos.boton, pressed && estilos.botonPressed]}
+      >
         <View style={estilos.row}>
           <MaterialCommunityIcons name="account-multiple-plus-outline" size={20} color="#fff" />
           <Text style={estilos.botonTexto}>Añadir participantes</Text>
         </View>
       </Pressable>
 
-      {/* Ver todos los grupos */}
-      <Pressable style={[estilos.boton, estilos.botonSec]}>
+      {/* Ver todos los grupos (SECUNDARIO outline) */}
+      <Pressable
+        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
+      >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="eye-outline" size={20} color="#fff" />
-          <Text style={estilos.botonTexto}>Ver todos los grupos</Text>
+          <MaterialCommunityIcons name="eye-outline" size={20} color={PRIMARY} />
+          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Ver todos los grupos</Text>
         </View>
       </Pressable>
 
-      {/* Modificar equipo de participantes */}
-      <Pressable style={[estilos.boton, estilos.botonSec]}>
+      {/* Modificar equipo de participantes (SECUNDARIO outline) */}
+      <Pressable
+        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
+      >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="pencil-outline" size={20} color="#fff" />
-          <Text style={estilos.botonTexto}>Modificar equipo de participantes</Text>
+          <MaterialCommunityIcons name="pencil-outline" size={20} color={PRIMARY} />
+          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Modificar equipo de participantes</Text>
         </View>
       </Pressable>
 
-      {/* Finalizar evento */}
-      <Pressable style={[estilos.boton, estilos.botonSec]}>
+      {/* Finalizar evento (SECUNDARIO outline) */}
+      <Pressable
+        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
+      >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="trash-can-outline" size={20} color="#fff" />
-          <Text style={estilos.botonTexto}>Finalizar evento</Text>
+          <MaterialCommunityIcons name="trash-can-outline" size={20} color={PRIMARY} />
+          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Finalizar evento</Text>
         </View>
       </Pressable>
     </View>
   );
 }
 
+// ====== SOLO ESTILOS LedgerTeal ======
+const PRIMARY = '#0EA5A4'; // teal-500
+const BG = '#F8FBFC';      // casi blanco azulado
+const TEXT_MUTED = '#64748B';
+const CARD = '#FFFFFF';
+const BORDER = '#E2E8F0';
+
 const estilos = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f3f4f6', padding: 24, paddingTop: 60 },
+  container: { flex: 1, backgroundColor: BG, padding: 24, paddingTop: 60 },
 
-  // header contenedor relativo para posicionar el ícono
   header: { width: '100%', alignItems: 'center', marginBottom: 24, position: 'relative' },
+  logoutBtn: { position: 'absolute', top: 0, right: 0, padding: 6, borderRadius: 10 },
+  // highlight logout
+  logoutBtnPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.96 }] },
 
-  // botón de logout arriba a la derecha
-  logoutBtn: { position: 'absolute', top: 0, right: 0, padding: 6 },
-
-  titulo: { fontSize: 36, fontWeight: 'bold', color: '#111827' },
-  subtitulo: { fontSize: 20, fontWeight: '600', color: '#111827' },
+  titulo: { fontSize: 34, fontWeight: '800', color: PRIMARY },
+  subtitulo: { fontSize: 18, fontWeight: '600', color: TEXT_MUTED, marginTop: 2 },
 
   boton: {
-    backgroundColor: '#000',
+    backgroundColor: PRIMARY,
     borderRadius: 16,
     paddingVertical: 18,
     paddingHorizontal: 20,
     marginBottom: 16,
     alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
-  botonSec: { backgroundColor: '#6b7280' },
+  // highlight primario
+  botonPressed: {
+    backgroundColor: '#14B8A6',
+    transform: [{ scale: 0.985 }],
+    shadowOpacity: 0.12,
+    elevation: 3,
+  },
+  // Outline secundario
+  botonSec: {
+    backgroundColor: CARD,
+    borderWidth: 1,
+    borderColor: PRIMARY,
+  },
+  // highlight outline
+  botonSecPressed: {
+    backgroundColor: '#F0FBFA',
+    transform: [{ scale: 0.985 }],
+  },
+
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  botonTexto: { color: '#fff', fontSize: 18, fontWeight: '600' },
+
+  botonTexto: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  botonTextoSec: { color: PRIMARY },
 });
