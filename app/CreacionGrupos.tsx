@@ -51,6 +51,7 @@ export default function CrearGrupo() {
       const participante_id = await obtenerIDparticipante();
       setParticipanteId(participante_id);
     })();
+
   }, [modoEdicion]);
 
   // --------- Validaciones ---------

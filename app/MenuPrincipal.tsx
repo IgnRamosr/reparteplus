@@ -1,12 +1,15 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { authSignOut } from '../lib/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { borrarIDparticipante } from '@/lib/funcionesParticipante';
+import { borrarIDparticipante, obtenerIDparticipante } from '@/lib/funcionesParticipante';
 
 export default function MenuPrincipal() {
+
+
+
   const handleLogout = useCallback(() => {
     Alert.alert('Cerrar sesión', '¿Seguro que quieres salir?', [
       { text: 'Cancelar', style: 'cancel' },

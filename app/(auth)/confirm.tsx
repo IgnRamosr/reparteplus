@@ -12,6 +12,7 @@ import {
   // authSignOut,
 } from "../../lib/auth";
 import { api } from "../../lib/api";
+import { guardarIdParticipante } from "@/lib/funcionesParticipante";
 
 export default function ConfirmScreen() {
   const {
@@ -99,14 +100,15 @@ export default function ConfirmScreen() {
     try {
       setBusy(true);
 
-      const emailNorm = email.trim().toLowerCase();
+      const emailNorm = email.trim();
 
       // 1) Confirmar en Cognito
       await authConfirm(emailNorm, code.trim());
 
       // 2) Si tenemos la password, iniciamos sesión para obtener el sub
       if (password) {
-        await authSignIn(emailNorm, password);
+        await authSignIn(emailNorm, password)
+
 
         // 3) Obtener sub y registrar en tu API
         const sub = await getCognitoSub();
@@ -119,9 +121,18 @@ export default function ConfirmScreen() {
           sub_cognito: sub // 👈 usa el sub real obtenido tras el sign-in
         });
 
+        const datosUsuario = await api.login({ email, password});
+
+
+        await guardarIdParticipante(datosUsuario.participante_id, datosUsuario.email, datosUsuario.nombre);
+
+
+
         // 4) Mantén la sesión iniciada y navega al menú principal
+        if(datosUsuario.participante_id){
         router.replace("/MenuPrincipal" as const);
-        Alert.alert("Cuenta confirmada", "Registro completado.");
+        Alert.alert("Cuenta confirmada", "Registro completado.");}
+
         return;
       } else {
         console.log('No hay contraseña');

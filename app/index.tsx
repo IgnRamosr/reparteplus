@@ -21,7 +21,7 @@ export default function Index() {
             navigated.current = true;
             router.replace(token ? '/MenuPrincipal' : '/login');
           }
-        }, 12000);
+        }, 2000);
       } catch {
         if (!navigated.current) {
           navigated.current = true;
