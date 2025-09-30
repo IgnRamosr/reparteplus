@@ -1,10 +1,10 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { authSignOut } from '../lib/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { borrarIDparticipante, obtenerIDparticipante } from '@/lib/funcionesParticipante';
+import { borrarIDparticipante } from '@/lib/funcionesParticipante';
 
 export default function MenuPrincipal() {
 
@@ -45,7 +45,7 @@ export default function MenuPrincipal() {
           android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}
           accessibilityLabel="Cerrar sesión"
         >
-          <MaterialCommunityIcons name="logout" size={26} color="#0F172A" />
+          <MaterialCommunityIcons name="logout" size={26} color="#14B8A6" />
         </Pressable>
       </View>
 
@@ -98,24 +98,15 @@ export default function MenuPrincipal() {
       {/* Ver todos los grupos (SECUNDARIO outline) */}
       <Pressable
         android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
+        style={({ pressed }) => [estilos.boton, estilos.boton, pressed && estilos.botonSecPressed]}
+        onPress={() => router.push('/VerTodosLosGrupos')}
       >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="eye-outline" size={20} color={PRIMARY} />
-          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Ver todos los grupos</Text>
+          <MaterialCommunityIcons name="eye-outline" size={20} color="#fff" />
+          <Text style={[estilos.botonTexto, estilos.botonTexto]}>Ver todos los grupos</Text>
         </View>
       </Pressable>
 
-      {/* Modificar equipo de participantes (SECUNDARIO outline) */}
-      <Pressable
-        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
-      >
-        <View style={estilos.row}>
-          <MaterialCommunityIcons name="pencil-outline" size={20} color={PRIMARY} />
-          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Modificar equipo de participantes</Text>
-        </View>
-      </Pressable>
 
       {/* Finalizar evento (SECUNDARIO outline) */}
       <Pressable
@@ -142,7 +133,7 @@ const estilos = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG, padding: 24, paddingTop: 60 },
 
   header: { width: '100%', alignItems: 'center', marginBottom: 24, position: 'relative' },
-  logoutBtn: { position: 'absolute', top: 0, right: 0, padding: 6, borderRadius: 10 },
+  logoutBtn: { position: 'absolute', top: 0, right: 0, padding: 6, borderRadius: 10  },
   // highlight logout
   logoutBtnPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.96 }] },
 
