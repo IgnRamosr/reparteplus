@@ -1,3 +1,4 @@
+// app/MenuPrincipal.tsx
 import React, { useCallback } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -7,9 +8,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { borrarIDparticipante } from '@/lib/funcionesParticipante';
 
 export default function MenuPrincipal() {
-
-
-
   const handleLogout = useCallback(() => {
     Alert.alert('Cerrar sesión', '¿Seguro que quieres salir?', [
       { text: 'Cancelar', style: 'cancel' },
@@ -49,7 +47,7 @@ export default function MenuPrincipal() {
         </Pressable>
       </View>
 
-      {/* Crear Grupo (PRIMARIO) */}
+      {/* Crear grupo (PRIMARIO) */}
       <Pressable
         onPress={() => router.push('/CreacionGrupos')}
         android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
@@ -63,6 +61,7 @@ export default function MenuPrincipal() {
 
       {/* Pagar saldo pendiente (SECUNDARIO outline) */}
       <Pressable
+        onPress={() => Alert.alert('Pendiente', 'Conectar con la pantalla de pago.')}
         android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
         style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
       >
@@ -72,44 +71,21 @@ export default function MenuPrincipal() {
         </View>
       </Pressable>
 
-      {/* Registrar gasto (SECUNDARIO outline) */}
+      {/* Ver todos los grupos (SECUNDARIO outline) */}
       <Pressable
-        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
-      >
-        <View style={estilos.row}>
-          <MaterialCommunityIcons name="note-edit-outline" size={20} color={PRIMARY} />
-          <Text style={[estilos.botonTexto, estilos.botonTextoSec]}>Registrar gasto</Text>
-        </View>
-      </Pressable>
-
-      {/* Añadir participantes (PRIMARIO) */}
-      <Pressable
-        onPress={() => router.push('/InvitacionParticipantesGeneral')}
+        onPress={() => router.push('./grupos')}
         android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
         style={({ pressed }) => [estilos.boton, pressed && estilos.botonPressed]}
       >
         <View style={estilos.row}>
-          <MaterialCommunityIcons name="account-multiple-plus-outline" size={20} color="#fff" />
-          <Text style={estilos.botonTexto}>Añadir participantes</Text>
-        </View>
-      </Pressable>
-
-      {/* Ver todos los grupos (SECUNDARIO outline) */}
-      <Pressable
-        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        style={({ pressed }) => [estilos.boton, estilos.boton, pressed && estilos.botonSecPressed]}
-        onPress={() => router.push('/VerTodosLosGrupos')}
-      >
-        <View style={estilos.row}>
           <MaterialCommunityIcons name="eye-outline" size={20} color="#fff" />
-          <Text style={[estilos.botonTexto, estilos.botonTexto]}>Ver todos los grupos</Text>
+          <Text style={estilos.botonTexto}>Ver todos los grupos</Text>
         </View>
       </Pressable>
-
 
       {/* Finalizar evento (SECUNDARIO outline) */}
       <Pressable
+        onPress={() => Alert.alert('Pendiente', 'Conectar con el flujo de cierre.')}
         android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
         style={({ pressed }) => [estilos.boton, estilos.botonSec, pressed && estilos.botonSecPressed]}
       >
@@ -127,14 +103,12 @@ const PRIMARY = '#0EA5A4'; // teal-500
 const BG = '#F8FBFC';      // casi blanco azulado
 const TEXT_MUTED = '#64748B';
 const CARD = '#FFFFFF';
-const BORDER = '#E2E8F0';
 
 const estilos = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG, padding: 24, paddingTop: 60 },
 
   header: { width: '100%', alignItems: 'center', marginBottom: 24, position: 'relative' },
-  logoutBtn: { position: 'absolute', top: 0, right: 0, padding: 6, borderRadius: 10  },
-  // highlight logout
+  logoutBtn: { position: 'absolute', top: 0, right: 0, padding: 6, borderRadius: 10 },
   logoutBtnPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.96 }] },
 
   titulo: { fontSize: 34, fontWeight: '800', color: PRIMARY },

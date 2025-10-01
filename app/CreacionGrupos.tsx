@@ -268,17 +268,23 @@ const CARD = '#FFFFFF';
 
 const estilos = StyleSheet.create({
   container: {
-    backgroundColor: BG,
-    justifyContent: 'center',
-    alignItems: 'center',
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 24,
-  },
+  backgroundColor: BG,
+  flex: 1,
+  alignItems: 'center',
+  paddingHorizontal: 24,
+  paddingTop: 16,           // menos empuje desde arriba
+},
+  header: {
+  width: '100%',
+  alignItems: 'center',
+  marginTop: 80,            // 🔽 baja el bloque del título
+  marginBottom: 24,         // espacio hacia el formulario
+},
 
-  header: { position: 'absolute', top: 0, left: 0, right: 0, paddingVertical: 20 },
   headerInner: { width: '100%', alignItems: 'center', gap: 6 },
-  brand: { color: PRIMARY, fontSize: 34, fontWeight: '800' },
+
+  brand: { color: PRIMARY, fontSize: 36, fontWeight: '800' },
+
   title: { color: TEXT_MUTED, fontSize: 18, fontWeight: '700' },
 
   label: {
