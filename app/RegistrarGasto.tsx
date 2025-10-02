@@ -11,12 +11,14 @@ import {
   Text,
   TextInput,
   View,
+  Image,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
+import * as ImagePicker from 'expo-image-picker';
 
 type GrupoUI = { id: string; nombre: string };
 type Pagador = { id: number; nombre: string };
@@ -79,16 +81,77 @@ export default function RegistrarGasto() {
   const [loadingGrupos, setLoadingGrupos] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
+  // ====== FOTO (cámara o galería) ======
+  const [fotoUri, setFotoUri] = useState<string | null>(null);
+
+  const pedirPermisoGaleria = async () => {
+    const { granted } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permiso requerido', 'Necesitas permiso para acceder a tus fotos.');
+      return false;
+    }
+    return true;
+  };
+
+  const pedirPermisoCamara = async () => {
+    const { granted } = await ImagePicker.requestCameraPermissionsAsync();
+    if (!granted) {
+      Alert.alert('Permiso requerido', 'Necesitas permiso para usar la cámara.');
+      return false;
+    }
+    return true;
+  };
+
+  const pickFromGallery = async () => {
+    const ok = await pedirPermisoGaleria();
+    if (!ok) return;
+
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+
+    if (!res.canceled) {
+      setFotoUri(res.assets[0].uri);
+    }
+  };
+
+  const pickFromCamera = async () => {
+    const ok = await pedirPermisoCamara();
+    if (!ok) return;
+
+    const res = await ImagePicker.launchCameraAsync({
+      allowsEditing: true,
+      aspect: [4, 3],
+      quality: 0.7,
+    });
+
+    if (!res.canceled) {
+      setFotoUri(res.assets[0].uri);
+    }
+  };
+
+  // Abre opciones: Cámara o Galería
   const onPickPhoto = () => {
-    Alert.alert('En construcción', 'Adjuntar foto/boleta se habilitará más adelante.');
+    Alert.alert(
+      'Adjuntar comprobante',
+      '¿Cómo quieres agregar la imagen?',
+      [
+        { text: 'Tomar foto', onPress: pickFromCamera },
+        { text: 'Elegir de galería', onPress: pickFromGallery },
+        { text: 'Cancelar', style: 'cancel' },
+      ],
+      { cancelable: true }
+    );
   };
 
   // --------- CARGA DE GRUPOS DESDE API (si no vino por param) ----------
   const fetchGrupos = useCallback(async () => {
     if (groupIdParam) return;      // ya tenemos grupo por la URL
     if (!participanteId) return;   // si necesitas el participante para pedir grupos
-    
-console.log(participanteId)
+
     try {
       setLoadingGrupos(true);
       const resp = await api.post('/grupos', { id: participanteId, tipo: 'grupo' });
@@ -137,8 +200,6 @@ console.log(participanteId)
     // Si ya guardas el id real del participante logueado en AsyncStorage, se usará acá
     const participante_id = (participanteId ?? '1').toString();
 
-    console.log(grupoFinal, pagadorId, participante_id);
-
     const payload = {
       grupo_id: String(grupoFinal),
       participante_id,                         // quien registra
@@ -147,12 +208,12 @@ console.log(participanteId)
       moneda: 'CLP',
       monto: montoStr,
       fecha_registro: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+      // NOTA: fotoUri queda lista para adjuntar cuando conectes tu API/S3
     };
 
     try {
       setSubmitting(true);
       const resp = await api.post('/gasto', payload); // <- singular
-      console.log('[POST gasto]', resp.status, resp.data);
       if (resp.status >= 200 && resp.status < 300) {
         DeviceEventEmitter.emit('gasto:creado', payload);
         router.back();
@@ -265,6 +326,7 @@ console.log(participanteId)
           keyboardType="numeric"
           inputMode="numeric"
         />
+
         <Pressable
           onPress={onPickPhoto}
           style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]}
@@ -273,6 +335,19 @@ console.log(participanteId)
         >
           <MaterialCommunityIcons name="camera-outline" size={18} color={INK} />
         </Pressable>
+
+        {!!fotoUri && (
+          <View style={s.thumbWrap}>
+            <Image source={{ uri: fotoUri }} style={s.thumb} />
+            <Pressable
+              onPress={() => setFotoUri(null)}
+              style={({ pressed }) => [s.removeBtn, pressed && { opacity: 0.8 }]}
+              hitSlop={6}
+            >
+              <MaterialCommunityIcons name="close" size={14} color="#fff" />
+            </Pressable>
+          </View>
+        )}
       </View>
 
       {/* Botón Registrar */}
@@ -337,4 +412,12 @@ const s = StyleSheet.create({
   },
   primaryBtnPressed: { backgroundColor: '#14B8A6', transform: [{ scale: 0.985 }], shadowOpacity: 0.12, elevation: 3 },
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  // Miniatura y botón eliminar
+  thumbWrap: { position: 'relative' },
+  thumb: { width: 44, height: 44, borderRadius: 8, borderWidth: 1, borderColor: BORDER },
+  removeBtn: {
+    position: 'absolute', top: -6, right: -6,
+    width: 18, height: 18, borderRadius: 9, backgroundColor: '#ef4444',
+    alignItems: 'center', justifyContent: 'center',
+  },
 });
