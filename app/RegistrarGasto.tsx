@@ -1,4 +1,4 @@
-// app/RegistrarGasto.tsx
+// app/RegistrarGasto.tsx 
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Alert,
@@ -19,10 +19,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
 type GrupoUI = { id: string; nombre: string };
-type Pagador = { id: number; nombre: string };
+type Participante = { participante_id: number; nombre: string; correo?: string | null };
 
 const api = axios.create({
   baseURL: 'https://amzcxtvh06.execute-api.us-east-1.amazonaws.com/production',
+  timeout: 20000,
+  headers: { 'Content-Type': 'application/json' },
+  validateStatus: () => true,
+});
+
+const api2 = axios.create({
+  baseURL: 'https://ee61hfpl8e.execute-api.us-east-1.amazonaws.com/production',
   timeout: 20000,
   headers: { 'Content-Type': 'application/json' },
   validateStatus: () => true,
@@ -43,6 +50,29 @@ const parseMonto = (s: string) =>
     .replace(/,/g, '')
     .replace(/[^\d]/g, '');
 
+// 👉 ¿es un ID numérico "puro"?
+const isNumericId = (v: unknown) =>
+  typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v as string));
+
+// 👉 extrae el id del payload (acepta id real o temporal)
+function extractGastoIdFlexible(data: any): string | null {
+  if (!data) return null;
+  const candidates = [
+    data.id,
+    data.gasto_id,
+    data?.gasto?.id,
+    data?.resultado?.id,
+    data?.result?.id,
+    data?.tmp_id, // por si el backend lo nombra así
+  ];
+  for (const c of candidates) {
+    if (c !== undefined && c !== null && String(c).length) {
+      return String(c);
+    }
+  }
+  return null;
+}
+
 export default function RegistrarGasto() {
   const { grupo } = useLocalSearchParams<{ grupo?: string | string[] }>();
   const groupIdParam = Array.isArray(grupo) ? grupo[0] : grupo ?? '';
@@ -58,22 +88,12 @@ export default function RegistrarGasto() {
     })();
   }, []);
 
-  // Pagadores (ejemplo). Reemplaza ids por los reales si ya los tienes.
-  const pagadores: Pagador[] = useMemo(
-    () => [
-      { id: 1, nombre: 'Luis Gonzalez' },
-      { id: 2, nombre: 'Ignacio Ramos' },
-      { id: 3, nombre: 'Sebastián Tapia' },
-    ],
-    []
-  );
-  const [pagadorId, setPagadorId] = useState<number>(pagadores[0].id);
+  // ====== Participantes (pagadores) por grupo — REAL desde API ======
+  const [participantes, setParticipantes] = useState<Participante[]>([]);
+  const [loadingParticipantes, setLoadingParticipantes] = useState(false);
+  const [pagadorId, setPagadorId] = useState<number | undefined>(undefined);
 
-  const [concepto, setConcepto] = useState('Bencina');
-  const moneda: string = 'CLP';
-  const [monto, setMonto] = useState('60000');
-
-  // Estado de grupos (cuando no viene por URL)
+  // ====== Estado de grupos (cuando no viene por URL) ======
   const [grupos, setGrupos] = useState<GrupoUI[]>([]);
   const [selectedGrupoId, setSelectedGrupoId] = useState<string | undefined>(groupIdParam || undefined);
   const [loadingGrupos, setLoadingGrupos] = useState(false);
@@ -87,8 +107,7 @@ export default function RegistrarGasto() {
   const fetchGrupos = useCallback(async () => {
     if (groupIdParam) return;      // ya tenemos grupo por la URL
     if (!participanteId) return;   // si necesitas el participante para pedir grupos
-    
-console.log(participanteId)
+
     try {
       setLoadingGrupos(true);
       const resp = await api.post('/grupos', { id: participanteId, tipo: 'grupo' });
@@ -119,7 +138,59 @@ console.log(participanteId)
 
   useEffect(() => { fetchGrupos(); }, [fetchGrupos]);
 
-  // --------- SUBMIT: ENVÍA GASTO A LA API ----------
+  // --------- CARGA DE PARTICIPANTES DEL GRUPO SELECCIONADO ----------
+  const grupoActual = groupIdParam || selectedGrupoId || '';
+  const fetchParticipantes = useCallback(async (grupoId: string) => {
+    if (!grupoId) {
+      setParticipantes([]);
+      setPagadorId(undefined);
+      return;
+    }
+    try {
+      setLoadingParticipantes(true);
+      const resp = await api2.get('/grupo-miembros', { params: { grupoId } });
+
+      if (resp.status >= 200 && resp.status < 300) {
+        const arr: any[] = resp.data?.resultados ?? [];
+        const mapped: Participante[] = arr.map((r) => ({
+          participante_id: Number(r.participante_id),
+          nombre: String(r.nombre || r.nombre_participante || '—'),
+          correo: r.correo ?? null,
+        }));
+        setParticipantes(mapped);
+        // Seleccionar por defecto el primero si no hay selección vigente o no existe ya
+        if (mapped.length > 0) {
+          const exists = mapped.some(p => p.participante_id === pagadorId);
+          setPagadorId(exists ? pagadorId : mapped[0].participante_id);
+        } else {
+          setPagadorId(undefined);
+        }
+      } else {
+        Alert.alert('Error', `(${resp.status}) ${resp.data?.message ?? 'No se pudieron cargar los participantes.'}`);
+        setParticipantes([]);
+        setPagadorId(undefined);
+      }
+    } catch (e: any) {
+      const msg = e?.response?.data?.message || e?.message || 'No se pudieron cargar los participantes.';
+      Alert.alert('Error', msg);
+      setParticipantes([]);
+      setPagadorId(undefined);
+    } finally {
+      setLoadingParticipantes(false);
+    }
+  }, [pagadorId]);
+
+  // Refrescar participantes cuando cambia el grupo
+  useEffect(() => {
+    fetchParticipantes(String(grupoActual));
+  }, [grupoActual, fetchParticipantes]);
+
+  // ====== UI (form) ======
+  const [concepto, setConcepto] = useState('');
+  const moneda: string = 'CLP';
+  const [monto, setMonto] = useState('');
+
+  // --------- SUBMIT: ENVÍA GASTO Y NAVEGA (ID real o tmp) ----------
   const onSubmit = async () => {
     const grupoFinal = groupIdParam || selectedGrupoId || '';
     const montoStr = parseMonto(monto);
@@ -129,46 +200,98 @@ console.log(participanteId)
       Alert.alert('Revisa el formulario', 'Selecciona un grupo.');
       return;
     }
+    if (!pagadorId) {
+      Alert.alert('Revisa el formulario', 'Selecciona el pagador.');
+      return;
+    }
     if (!descripcion || !montoStr) {
       Alert.alert('Revisa el formulario', '¡Completa los campos vacíos!');
       return;
     }
 
-    // Si ya guardas el id real del participante logueado en AsyncStorage, se usará acá
-    const participante_id = (participanteId ?? '1').toString();
-
-    console.log(grupoFinal, pagadorId, participante_id);
+    const participante_id = (participanteId ?? '1').toString(); // quien registra
+    const fechaHoy = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     const payload = {
       grupo_id: String(grupoFinal),
       participante_id,                         // quien registra
-      participantegasto_id: String(pagadorId), // a nombre de quién va el gasto
+      participantegasto_id: String(pagadorId), // pagador seleccionado
       descripciongasto: descripcion,
       moneda: 'CLP',
       monto: montoStr,
-      fecha_registro: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+      fecha_registro: fechaHoy,
     };
 
     try {
+      if (submitting) return;
       setSubmitting(true);
-      const resp = await api.post('/gasto', payload); // <- singular
-      console.log('[POST gasto]', resp.status, resp.data);
-      if (resp.status >= 200 && resp.status < 300) {
-        DeviceEventEmitter.emit('gasto:creado', payload);
-        router.back();
-      } else {
+
+      // 1) Crear en el server (puede responder id real o temporal)
+      const resp = await api.post('/gasto', payload); // <- endpoint de creación
+      if (resp.status < 200 || resp.status >= 300) {
         const msg = resp.data?.message || `La API respondió con estado ${resp.status}.`;
-        Alert.alert('No se pudo registrar', msg);
+        throw new Error(msg);
       }
+
+      // 2) Extraer id (string); puede ser numérico o tmp
+      const idRespuesta = extractGastoIdFlexible(resp.data);
+      if (!idRespuesta) {
+        throw new Error('No se recibió un ID válido del servidor.');
+      }
+
+      // 3) Si NO es numérico, guardar snapshot local y navegar con tmpId
+      if (!isNumericId(idRespuesta)) {
+        const tmpId = String(idRespuesta);
+        const snapshot = {
+          gasto: {
+            id: tmpId,
+            grupo_id: Number(grupoFinal),
+            descripcion,
+            moneda: 'CLP',
+            monto_total: Number(montoStr),
+            fecha_registro: fechaHoy,
+          },
+          integrantes: [] as Array<any>, // si luego calculas reparto, puedes rellenarlo
+        };
+        await AsyncStorage.setItem(`gasto:${tmpId}`, JSON.stringify(snapshot));
+
+        // Emite evento para refrescar listados (opcional)
+        DeviceEventEmitter.emit('gasto:creado', {
+          id: tmpId,
+          concepto: descripcion,
+          pagador: participantes.find(p => p.participante_id === pagadorId)?.nombre ?? '—',
+          pagado: false,
+          monto: Number(montoStr),
+          moneda: 'CLP',
+          grupo_id: Number(grupoFinal),
+        });
+
+        // Navega al detalle con el tmpId + grupoId (el detalle resolverá el id real)
+        router.replace({ pathname: '/detallegasto', params: { gasto: tmpId, grupoId: String(grupoFinal) } });
+        return;
+      }
+
+      // 4) Si es numérico, flujo normal → navegar directo con id real
+      const idReal = String(idRespuesta);
+      DeviceEventEmitter.emit('gasto:creado', {
+        id: Number(idReal),
+        concepto: descripcion,
+        pagador: participantes.find(p => p.participante_id === pagadorId)?.nombre ?? '—',
+        pagado: false,
+        monto: Number(montoStr),
+        moneda: 'CLP',
+        grupo_id: Number(grupoFinal),
+      });
+
+      router.replace({ pathname: '/detallegasto', params: { gasto: idReal } });
     } catch (e: any) {
-      const msg = e?.response?.data?.message || e?.message || 'Error enviando el gasto.';
-      Alert.alert('Error', msg);
+      const msg = e?.message || e?.response?.data?.message || 'Error enviando el gasto.';
+      Alert.alert('No se pudo registrar', msg);
     } finally {
       setSubmitting(false);
     }
   };
 
-  // ---------- UI ----------
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.select({ ios: 'padding', android: undefined })}>
       {/* Header */}
@@ -188,52 +311,35 @@ console.log(participanteId)
         <View style={{ width: 36 }} />
       </View>
 
-      {/* Grupo (solo si no vino por URL) */}
-      {!groupIdParam && (
-        <>
-          <Text style={s.label}>Grupo</Text>
-          {loadingGrupos ? (
-            <View style={[s.select, { justifyContent: 'center' }]}>
-              <ActivityIndicator />
-            </View>
-          ) : (
-            <Pressable
-              disabled={grupos.length === 0}
-              onPress={() => {
-                if (grupos.length === 0) return;
-                const ids = grupos.map((g) => g.id);
-                const curr = selectedGrupoId ?? ids[0];
-                const next = ids[(ids.indexOf(curr) + 1) % ids.length];
-                setSelectedGrupoId(next);
-              }}
-              android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-              style={({ pressed }) => [s.select, pressed && s.selectPressed, grupos.length === 0 && { opacity: 0.6 }]}
-            >
-              <Text style={s.selectText}>
-                {grupos.length === 0
-                  ? 'Sin grupos disponibles'
-                  : grupos.find((g) => g.id === selectedGrupoId)?.nombre ?? 'Selecciona un grupo'}
-              </Text>
-              <MaterialCommunityIcons name="chevron-down" size={18} color={INK} />
-            </Pressable>
-          )}
-        </>
-      )}
-
-      {/* Pagador (Picker) */}
+      {/* Pagador (Picker con participantes reales) */}
       <Text style={s.label}>Pagador</Text>
       <View style={s.pickerWrapper}>
-        <Picker
-          selectedValue={pagadorId}
-          onValueChange={(val) => setPagadorId(Number(val))}
-          style={s.picker}
-          dropdownIconColor={INK}
-        >
-          {pagadores.map((p) => (
-            <Picker.Item key={p.id} label={p.nombre} value={p.id} color={INK} />
-          ))}
-        </Picker>
-        <MaterialCommunityIcons name="chevron-down" size={18} color={INK} style={s.pickerChevron} />
+        {loadingParticipantes ? (
+          <View style={[s.select, { justifyContent: 'center', marginBottom: 0 }]}>
+            <ActivityIndicator />
+          </View>
+        ) : (
+          <Picker
+            enabled={participantes.length > 0}
+            selectedValue={pagadorId}
+            onValueChange={(val) => setPagadorId(Number(val))}
+            style={s.picker}
+            dropdownIconColor={INK}
+          >
+            {participantes.length === 0 ? (
+              <Picker.Item label="Sin participantes" value={undefined} color={INK} />
+            ) : (
+              participantes.map((p) => (
+                <Picker.Item
+                  key={p.participante_id}
+                  label={p.nombre}
+                  value={p.participante_id}
+                  color={INK}
+                />
+              ))
+            )}
+          </Picker>
+        )}
       </View>
 
       {/* Gasto */}
@@ -249,7 +355,7 @@ console.log(participanteId)
       {/* Moneda (fija) */}
       <Text style={s.label}>Moneda</Text>
       <View style={s.select}>
-        <Text style={s.selectText}>{moneda}</Text>
+        <Text style={s.selectText}>{'CLP'}</Text>
         <MaterialCommunityIcons name="lock-outline" size={18} color={INK} />
       </View>
 
@@ -318,7 +424,7 @@ const s = StyleSheet.create({
     marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05,
     shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1, position: 'relative',
   },
-  picker: { width: '100%', color: INK, paddingVertical: 2, paddingHorizontal: 4 },
+  picker: { width: '100%', color: INK, paddingVertical: 2, paddingHorizontal: 4, height: Platform.select({ ios: 54, android: 54 }) },
   pickerChevron: { position: 'absolute', right: 12, top: 14, opacity: 0.6, pointerEvents: 'none' },
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   camBtn: {
