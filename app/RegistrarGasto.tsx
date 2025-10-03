@@ -1,4 +1,4 @@
-// app/RegistrarGasto.tsx 
+// app/RegistrarGasto.tsx
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
 import {
   Alert,
@@ -49,29 +49,6 @@ const parseMonto = (s: string) =>
     .replace(/\./g, '')
     .replace(/,/g, '')
     .replace(/[^\d]/g, '');
-
-// 👉 ¿es un ID numérico "puro"?
-const isNumericId = (v: unknown) =>
-  typeof v === 'number' || (typeof v === 'string' && /^\d+$/.test(v as string));
-
-// 👉 extrae el id del payload (acepta id real o temporal)
-function extractGastoIdFlexible(data: any): string | null {
-  if (!data) return null;
-  const candidates = [
-    data.id,
-    data.gasto_id,
-    data?.gasto?.id,
-    data?.resultado?.id,
-    data?.result?.id,
-    data?.tmp_id, // por si el backend lo nombra así
-  ];
-  for (const c of candidates) {
-    if (c !== undefined && c !== null && String(c).length) {
-      return String(c);
-    }
-  }
-  return null;
-}
 
 export default function RegistrarGasto() {
   const { grupo } = useLocalSearchParams<{ grupo?: string | string[] }>();
@@ -149,6 +126,8 @@ export default function RegistrarGasto() {
     try {
       setLoadingParticipantes(true);
       const resp = await api2.get('/grupo-miembros', { params: { grupoId } });
+      console.log(grupoId)
+      console.log(resp.status)
 
       if (resp.status >= 200 && resp.status < 300) {
         const arr: any[] = resp.data?.resultados ?? [];
@@ -185,12 +164,7 @@ export default function RegistrarGasto() {
     fetchParticipantes(String(grupoActual));
   }, [grupoActual, fetchParticipantes]);
 
-  // ====== UI (form) ======
-  const [concepto, setConcepto] = useState('');
-  const moneda: string = 'CLP';
-  const [monto, setMonto] = useState('');
-
-  // --------- SUBMIT: ENVÍA GASTO Y NAVEGA (ID real o tmp) ----------
+  // --------- SUBMIT: ENVÍA GASTO A LA API ----------
   const onSubmit = async () => {
     const grupoFinal = groupIdParam || selectedGrupoId || '';
     const montoStr = parseMonto(monto);
@@ -209,88 +183,48 @@ export default function RegistrarGasto() {
       return;
     }
 
-    const participante_id = (participanteId ?? '1').toString(); // quien registra
-    const fechaHoy = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    // Id del participante logueado (quien registra el gasto)
+    const participante_id = (participanteId ?? '1').toString();
 
     const payload = {
       grupo_id: String(grupoFinal),
       participante_id,                         // quien registra
-      participantegasto_id: String(pagadorId), // pagador seleccionado
+      participantegasto_id: String(pagadorId), // EL PAGADOR seleccionado (participante_id)
       descripciongasto: descripcion,
       moneda: 'CLP',
       monto: montoStr,
-      fecha_registro: fechaHoy,
+      fecha_registro: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
     };
 
     try {
-      if (submitting) return;
       setSubmitting(true);
-
-      // 1) Crear en el server (puede responder id real o temporal)
-      const resp = await api.post('/gasto', payload); // <- endpoint de creación
-      if (resp.status < 200 || resp.status >= 300) {
-        const msg = resp.data?.message || `La API respondió con estado ${resp.status}.`;
-        throw new Error(msg);
-      }
-
-      // 2) Extraer id (string); puede ser numérico o tmp
-      const idRespuesta = extractGastoIdFlexible(resp.data);
-      if (!idRespuesta) {
-        throw new Error('No se recibió un ID válido del servidor.');
-      }
-
-      // 3) Si NO es numérico, guardar snapshot local y navegar con tmpId
-      if (!isNumericId(idRespuesta)) {
-        const tmpId = String(idRespuesta);
-        const snapshot = {
-          gasto: {
-            id: tmpId,
-            grupo_id: Number(grupoFinal),
-            descripcion,
-            moneda: 'CLP',
-            monto_total: Number(montoStr),
-            fecha_registro: fechaHoy,
-          },
-          integrantes: [] as Array<any>, // si luego calculas reparto, puedes rellenarlo
-        };
-        await AsyncStorage.setItem(`gasto:${tmpId}`, JSON.stringify(snapshot));
-
-        // Emite evento para refrescar listados (opcional)
+      const resp = await api.post('/gasto', payload); // <- singular
+      if (resp.status >= 200 && resp.status < 300) {
+        // Opcional: emite evento para refrescar listas
         DeviceEventEmitter.emit('gasto:creado', {
-          id: tmpId,
           concepto: descripcion,
           pagador: participantes.find(p => p.participante_id === pagadorId)?.nombre ?? '—',
           pagado: false,
           monto: Number(montoStr),
           moneda: 'CLP',
-          grupo_id: Number(grupoFinal),
         });
-
-        // Navega al detalle con el tmpId + grupoId (el detalle resolverá el id real)
-        router.replace({ pathname: '/detallegasto', params: { gasto: tmpId, grupoId: String(grupoFinal) } });
-        return;
+        router.back();
+      } else {
+        const msg = resp.data?.message || `La API respondió con estado ${resp.status}.`;
+        Alert.alert('No se pudo registrar', msg);
       }
-
-      // 4) Si es numérico, flujo normal → navegar directo con id real
-      const idReal = String(idRespuesta);
-      DeviceEventEmitter.emit('gasto:creado', {
-        id: Number(idReal),
-        concepto: descripcion,
-        pagador: participantes.find(p => p.participante_id === pagadorId)?.nombre ?? '—',
-        pagado: false,
-        monto: Number(montoStr),
-        moneda: 'CLP',
-        grupo_id: Number(grupoFinal),
-      });
-
-      router.replace({ pathname: '/detallegasto', params: { gasto: idReal } });
     } catch (e: any) {
-      const msg = e?.message || e?.response?.data?.message || 'Error enviando el gasto.';
-      Alert.alert('No se pudo registrar', msg);
+      const msg = e?.response?.data?.message || e?.message || 'Error enviando el gasto.';
+      Alert.alert('Error', msg);
     } finally {
       setSubmitting(false);
     }
   };
+
+  // ====== UI ======
+  const [concepto, setConcepto] = useState('');
+  const moneda: string = 'CLP';
+  const [monto, setMonto] = useState('');
 
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.select({ ios: 'padding', android: undefined })}>
@@ -310,6 +244,8 @@ export default function RegistrarGasto() {
         </View>
         <View style={{ width: 36 }} />
       </View>
+
+
 
       {/* Pagador (Picker con participantes reales) */}
       <Text style={s.label}>Pagador</Text>
@@ -355,7 +291,7 @@ export default function RegistrarGasto() {
       {/* Moneda (fija) */}
       <Text style={s.label}>Moneda</Text>
       <View style={s.select}>
-        <Text style={s.selectText}>{'CLP'}</Text>
+        <Text style={s.selectText}>{moneda}</Text>
         <MaterialCommunityIcons name="lock-outline" size={18} color={INK} />
       </View>
 
