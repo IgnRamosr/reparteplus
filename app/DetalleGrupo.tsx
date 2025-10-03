@@ -149,6 +149,7 @@ export default function DetalleGrupo() {
         style: 'destructive',
         onPress: () => setGastos(prev => prev.filter(g => g.id !== gastoId)),
       },
+
     ]);
   };
 
