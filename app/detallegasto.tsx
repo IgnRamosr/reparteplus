@@ -1,7 +1,17 @@
 // app/detallegasto.tsx
-import React, { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View, FlatList } from 'react-native';
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  FlatList,
+  BackHandler,
+} from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import axios from 'axios';
 
@@ -55,15 +65,16 @@ function formatCLP(n: number | string) {
   const num = typeof n === 'string' ? Number(n) : n;
   if (!Number.isFinite(num)) return '—';
   try {
-    return new Intl.NumberFormat('es-CL').format(num) + 'CLP';
+    return new Intl.NumberFormat('es-CL').format(num) + ' CLP';
   } catch {
-    return String(num) + 'CLP';
+    return String(num) + ' CLP';
   }
 }
 
 export default function DetalleGastoScreen() {
-  const { gasto } = useLocalSearchParams<{ gasto?: string }>();
+  const { gasto, grupoId } = useLocalSearchParams<{ gasto?: string; grupoId?: string }>();
   const gastoId = Array.isArray(gasto) ? gasto[0] : gasto;
+  const gid = Array.isArray(grupoId) ? grupoId[0] : grupoId;
 
   const [loading, setLoading] = useState(true);
   const [header, setHeader] = useState<{ titulo: string; total: string; id: string }>({
@@ -72,6 +83,28 @@ export default function DetalleGastoScreen() {
     id: gastoId ?? '—',
   });
   const [filas, setFilas] = useState<Fila[]>([]);
+
+  // === Navegar de vuelta al detalle del grupo, reutilizable
+  const goBackToGroup = useCallback(() => {
+    if (gid) {
+      router.replace({
+        pathname: '/DetalleGrupo',
+        params: { id: String(gid), _refresh: Date.now().toString() },
+      });
+      return true; // consumimos el evento del back
+    }
+    // fallback si no tenemos gid
+    router.back();
+    return true;
+  }, [gid]);
+
+  // Interceptar botón físico Back (Android) cuando la pantalla está en foco
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', goBackToGroup);
+      return () => sub.remove();
+    }, [goBackToGroup])
+  );
 
   // Cargar detalle real
   useEffect(() => {
@@ -122,7 +155,7 @@ export default function DetalleGastoScreen() {
       {/* Header */}
       <View style={s.header}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={goBackToGroup}
           style={({ pressed }) => [s.backBtn, pressed && s.backBtnPressed]}
           hitSlop={10}
           android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true, radius: 20 }}
@@ -161,10 +194,6 @@ export default function DetalleGastoScreen() {
             <Text style={s.summaryItemValue}>{header.total}</Text>
           </View>
           <View style={s.summaryDividerVertical} />
-          <View style={s.summaryItem}>
-            <Text style={s.summaryItemLabel}>ID</Text>
-            <Text style={s.summaryItemValueSmall}>{header.id}</Text>
-          </View>
         </View>
       </View>
 
@@ -292,7 +321,6 @@ const s = StyleSheet.create({
   summaryItem: { flex: 1, alignItems: 'center' },
   summaryItemLabel: { fontSize: 11, color: TEXT_MUTED, fontWeight: '600', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 },
   summaryItemValue: { fontSize: 18, fontWeight: '700', color: PRIMARY },
-  summaryItemValueSmall: { fontSize: 14, fontWeight: '600', color: INK },
   summaryDividerVertical: { width: 1, height: 30, backgroundColor: BORDER },
 
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },

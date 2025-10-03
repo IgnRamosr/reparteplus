@@ -1,5 +1,5 @@
 // app/RegistrarGasto.tsx
-import React, { useEffect, useMemo, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Alert,
   ActivityIndicator,
@@ -11,8 +11,10 @@ import {
   Text,
   TextInput,
   View,
+  BackHandler,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Picker } from '@react-native-picker/picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -52,14 +54,35 @@ const parseMonto = (s: string) =>
 
 export default function RegistrarGasto() {
   const { grupo } = useLocalSearchParams<{ grupo?: string | string[] }>();
-  const groupIdParam = Array.isArray(grupo) ? grupo[0] : grupo ?? '';
+  const groupIdParam = Array.isArray(grupo) ? grupo[0] : (grupo ?? '');
+
+  // ===== Back a /grupos/[id] con refresh =====
+  const goBackToGroup = useCallback(() => {
+    const gid = String(groupIdParam || selectedGrupoId || '');
+    if (gid) {
+      router.replace({
+        pathname: '/DetalleGrupo',
+        params: { id: gid, _refresh: Date.now().toString() },
+      });
+      return true;
+    }
+    router.back();
+    return true;
+  }, [groupIdParam]); // selectedGrupoId se define más abajo; TS lo aceptará por hoisting de funciones
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', goBackToGroup);
+      return () => sub.remove();
+    }, [goBackToGroup])
+  );
 
   // participante logueado
   const [participanteId, setParticipanteId] = useState<string | null>(null);
   useEffect(() => {
     (async () => {
       try {
-        const id = await AsyncStorage.getItem('participant_id'); // guarda esto al iniciar sesión
+        const id = await AsyncStorage.getItem('participant_id');
         if (id) setParticipanteId(id);
       } catch {}
     })();
@@ -82,8 +105,8 @@ export default function RegistrarGasto() {
 
   // --------- CARGA DE GRUPOS DESDE API (si no vino por param) ----------
   const fetchGrupos = useCallback(async () => {
-    if (groupIdParam) return;      // ya tenemos grupo por la URL
-    if (!participanteId) return;   // si necesitas el participante para pedir grupos
+    if (groupIdParam) return;
+    if (!participanteId) return;
 
     try {
       setLoadingGrupos(true);
@@ -126,8 +149,6 @@ export default function RegistrarGasto() {
     try {
       setLoadingParticipantes(true);
       const resp = await api2.get('/grupo-miembros', { params: { grupoId } });
-      console.log(grupoId)
-      console.log(resp.status)
 
       if (resp.status >= 200 && resp.status < 300) {
         const arr: any[] = resp.data?.resultados ?? [];
@@ -137,12 +158,8 @@ export default function RegistrarGasto() {
           correo: r.correo ?? null,
         }));
         setParticipantes(mapped);
-        // Seleccionar por defecto el primero si no hay selección vigente o no existe ya
-        if (mapped.length > 0) {
-          const exists = mapped.some(p => p.participante_id === pagadorId);
-          setPagadorId(exists ? pagadorId : mapped[0].participante_id);
-        } else {
-          setPagadorId(undefined);
+        if (mapped.length > 0 && !pagadorId) {
+          setPagadorId(mapped[0].participante_id);
         }
       } else {
         Alert.alert('Error', `(${resp.status}) ${resp.data?.message ?? 'No se pudieron cargar los participantes.'}`);
@@ -157,14 +174,18 @@ export default function RegistrarGasto() {
     } finally {
       setLoadingParticipantes(false);
     }
-  }, [pagadorId]);
+  }, []); // sin dependencias
 
-  // Refrescar participantes cuando cambia el grupo
   useEffect(() => {
     fetchParticipantes(String(grupoActual));
   }, [grupoActual, fetchParticipantes]);
 
-  // --------- SUBMIT: ENVÍA GASTO A LA API ----------
+  // ====== UI ======
+  const [concepto, setConcepto] = useState('');
+  const moneda: string = 'CLP';
+  const [monto, setMonto] = useState('');
+
+  // --------- SUBMIT: ENVÍA GASTO Y VUELVE A /grupos/[id] ----------
   const onSubmit = async () => {
     const grupoFinal = groupIdParam || selectedGrupoId || '';
     const montoStr = parseMonto(monto);
@@ -183,32 +204,37 @@ export default function RegistrarGasto() {
       return;
     }
 
-    // Id del participante logueado (quien registra el gasto)
     const participante_id = (participanteId ?? '1').toString();
 
     const payload = {
       grupo_id: String(grupoFinal),
-      participante_id,                         // quien registra
-      participantegasto_id: String(pagadorId), // EL PAGADOR seleccionado (participante_id)
+      participante_id,
+      participantegasto_id: String(pagadorId),
       descripciongasto: descripcion,
       moneda: 'CLP',
       monto: montoStr,
-      fecha_registro: new Date().toISOString().slice(0, 10), // YYYY-MM-DD
+      fecha_registro: new Date().toISOString().slice(0, 10),
     };
 
     try {
+      if (submitting) return;
       setSubmitting(true);
-      const resp = await api.post('/gasto', payload); // <- singular
+      const resp = await api.post('/gasto', payload);
+
       if (resp.status >= 200 && resp.status < 300) {
-        // Opcional: emite evento para refrescar listas
         DeviceEventEmitter.emit('gasto:creado', {
+          grupo_id: Number(grupoFinal),
           concepto: descripcion,
           pagador: participantes.find(p => p.participante_id === pagadorId)?.nombre ?? '—',
           pagado: false,
           monto: Number(montoStr),
           moneda: 'CLP',
         });
-        router.back();
+
+        router.replace({
+          pathname: '/DetalleGrupo',
+          params: { id: String(grupoFinal), _refresh: Date.now().toString() },
+        });
       } else {
         const msg = resp.data?.message || `La API respondió con estado ${resp.status}.`;
         Alert.alert('No se pudo registrar', msg);
@@ -221,17 +247,12 @@ export default function RegistrarGasto() {
     }
   };
 
-  // ====== UI ======
-  const [concepto, setConcepto] = useState('');
-  const moneda: string = 'CLP';
-  const [monto, setMonto] = useState('');
-
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.select({ ios: 'padding', android: undefined })}>
       {/* Header */}
       <View style={s.header}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={goBackToGroup}
           style={({ pressed }) => [s.iconBtn, pressed && s.iconPressed]}
           hitSlop={10}
           android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}
@@ -244,8 +265,6 @@ export default function RegistrarGasto() {
         </View>
         <View style={{ width: 36 }} />
       </View>
-
-
 
       {/* Pagador (Picker con participantes reales) */}
       <Text style={s.label}>Pagador</Text>

@@ -1,7 +1,9 @@
-    // InvitarParticipantes.tsx
-    import React, { useEffect, useState, useMemo } from 'react';
-    import { Pressable, StyleSheet, Text, View, Alert, Platform } from 'react-native';
+    // app/InvitacionParticipantesGeneral.tsx
+    import React, { useEffect, useState, useMemo, useCallback } from 'react';
+    import { Pressable, StyleSheet, Text, View, Alert, Platform, BackHandler } from 'react-native';
     import { router, useLocalSearchParams } from 'expo-router';
+    import { useFocusEffect } from '@react-navigation/native';
+    import { MaterialCommunityIcons } from '@expo/vector-icons';
     import { obtenerCorreoparticipante, obtenerIDparticipante } from '@/lib/funcionesParticipante';
 
     type Params = {
@@ -10,13 +12,35 @@
     };
 
     export default function InvitarParticipantes() {
-    // ⬇️ Tomamos los datos del grupo DESDE LOS PARÁMETROS
+    // ⬇️ Datos del grupo desde los parámetros
     const { grupoId, nombreGrupo } = useLocalSearchParams<Params>();
 
     const [correoUsuario, setCorreoUsuario] = useState('');
     const [participanteId, setParticipanteId] = useState<number | null>(null);
 
-    // Cargamos identidad local del participante (igual que antes)
+    // ===== Navegación de regreso a /grupos/[id] con refresh =====
+    const goBackToGroup = useCallback(() => {
+        const gid = String(grupoId ?? '');
+        if (gid) {
+        router.replace({
+            pathname: '/DetalleGrupo',
+            params: { id: gid, _refresh: Date.now().toString() },
+        });
+        return true; // consumimos el back
+        }
+        router.back();
+        return true;
+    }, [grupoId]);
+
+    // Capturar botón físico de Android
+    useFocusEffect(
+        useCallback(() => {
+        const sub = BackHandler.addEventListener('hardwareBackPress', goBackToGroup);
+        return () => sub.remove();
+        }, [goBackToGroup])
+    );
+
+    // Cargamos identidad local del participante
     useEffect(() => {
         (async () => {
         const correo = await obtenerCorreoparticipante();
@@ -26,7 +50,7 @@
         })();
     }, []);
 
-    // Validación mínima para deshabilitar acciones si faltan params
+    // Validación mínima
     const tieneGrupoValido = useMemo(
         () => Boolean(grupoId && nombreGrupo && String(grupoId).trim() && String(nombreGrupo).trim()),
         [grupoId, nombreGrupo]
@@ -51,9 +75,12 @@
     return (
         <View style={estilos.container}>
         {/* Header */}
-        <View style={estilos.header}>
+        <View style={[estilos.headerRow]}>
+            <View style={{ alignItems: 'center', flex: 1 }}>
             <Text style={estilos.titulo}>Reparte+</Text>
             <Text style={estilos.subtitulo}>Invitar participantes</Text>
+            </View>
+            <View style={{ width: 40 }} />
         </View>
 
         {/* Muestra del grupo proveniente de params */}
@@ -81,7 +108,7 @@
             <Text style={estilos.btnPrimaryText}>Compartir enlace</Text>
         </Pressable>
 
-        {/* Botón outline (sigue deshabilitado, como antes) */}
+        {/* Botón outline (placeholder) */}
         <Pressable
             disabled
             android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
@@ -98,8 +125,8 @@
     }
 
     /* ====== Estilos LedgerTeal ====== */
-    const PRIMARY = '#0EA5A4'; // teal
-    const BG = '#F8FBFC';      // casi blanco azulado
+    const PRIMARY = '#0EA5A4';
+    const BG = '#F8FBFC';
     const TEXT = '#0F172A';
     const TEXT_MUTED = '#64748B';
     const BORDER = '#E2E8F0';
@@ -113,9 +140,29 @@
         paddingTop: 60,
     },
 
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    backBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: CARD,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: PRIMARY,
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+    },
+    backBtnPressed: { transform: [{ scale: 0.95 }] },
+
     header: { marginTop: 8, alignItems: 'center', marginBottom: 16 },
-    titulo: { fontSize: 32, fontWeight: '800', color: PRIMARY },
-    subtitulo: { fontSize: 18, fontWeight: '700', color: TEXT_MUTED, marginTop: 2 },
+    titulo: { fontSize: 28, fontWeight: '800', color: PRIMARY },
+    subtitulo: { fontSize: 16, fontWeight: '700', color: TEXT_MUTED, marginTop: 2 },
 
     label: {
         color: TEXT_MUTED,
@@ -126,7 +173,6 @@
         marginLeft: 4,
     },
 
-    /* Reemplazo visual del Picker por un “display card” de solo lectura */
     displayContainer: {
         borderWidth: 1,
         borderColor: BORDER,
@@ -134,7 +180,6 @@
         backgroundColor: CARD,
         paddingHorizontal: 14,
         paddingVertical: Platform.select({ android: 12, ios: 14 }),
-        // sombra suave
         shadowColor: '#000',
         shadowOpacity: 0.05,
         shadowRadius: 6,
@@ -147,28 +192,12 @@
         gap: 8,
         justifyContent: 'space-between',
     },
-    displayLabel: {
-        color: TEXT_MUTED,
-        fontSize: 13,
-        fontWeight: '700',
-    },
     displayValue: {
         color: TEXT,
         fontSize: 16,
         fontWeight: '700',
         flexShrink: 1,
         textAlign: 'right',
-    },
-    displayCode: {
-        color: PRIMARY,
-        fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-        fontSize: 13,
-        fontWeight: '800',
-    },
-    separator: {
-        height: 1,
-        backgroundColor: '#EEF7F6',
-        marginVertical: 10,
     },
 
     btnPrimary: {

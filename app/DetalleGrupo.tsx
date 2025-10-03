@@ -9,6 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
+import { useFocusEffect } from '@react-navigation/native';
 
 const apiGrupo = axios.create({
   baseURL: 'https://ee61hfpl8e.execute-api.us-east-1.amazonaws.com/production',
@@ -30,32 +31,33 @@ type Grupo = {
   descripcion: string;
   fecha_inicio: string;
   fecha_cierre: string;
-  creador?: string; // <- creador_nombre
+  creador?: string; // creador_nombre
 };
 
 type Gasto = {
   id: string;
   concepto: string;
   pagador: string;
-  estado: boolean;   // mapeado desde API
+  estado: boolean;
   moneda?: string;
 };
 
 export default function DetalleGrupo() {
-  const { id, nombre, descripcion, fecha_inicio, fecha_cierre, creador_nombre } =
-    useLocalSearchParams<{
-      id: string;
-      nombre?: string;
-      descripcion?: string;
-      fecha_inicio?: string;
-      fecha_cierre?: string;
-      creador_nombre?: string;
-    }>();
+  const params = useLocalSearchParams<{
+    id: string;
+    nombre?: string;
+    descripcion?: string;
+    fecha_inicio?: string;
+    fecha_cierre?: string;
+    creador_nombre?: string;
+    _refresh?: string;
+  }>();
 
+  const { id, nombre, descripcion, fecha_inicio, fecha_cierre, creador_nombre } = params;
   const { width: SCREEN_W } = useWindowDimensions();
   const SMALL = SCREEN_W < 360;
 
-  const [cargando, setCargando] = useState<boolean>(true);
+  const [cargando, setCargando] = useState<boolean>(false);
   const [grupo, setGrupo] = useState<Grupo | null>(() =>
     id
       ? {
@@ -69,38 +71,38 @@ export default function DetalleGrupo() {
       : null
   );
 
-  // ===== Cargar meta del grupo desde API (con creador_nombre) =====
-  useEffect(() => {
-    let cancel = false;
-    (async () => {
-      try {
-        if (!id) return;
-        const resp = await apiGrupo.get(`/grupo/${id}`);
-        if (!cancel) {
-          if (resp.status >= 200 && resp.status < 300 && resp.data) {
-            const g = resp.data;
-            setGrupo({
-              id,
-              nombre: g.nombre ?? nombre ?? '',
-              descripcion: g.descripcion ?? descripcion ?? '',
-              fecha_inicio: g.fecha_inicio ?? fecha_inicio ?? '',
-              fecha_cierre: g.fecha_cierre ?? fecha_cierre ?? '',
-              creador: g.creador_nombre ?? creador_nombre ?? undefined,
-            });
-          }
-          setCargando(false);
-        }
-      } catch {
-        if (!cancel) setCargando(false);
+  const [gastos, setGastos] = useState<Gasto[]>([]);
+  const [loadingGastos, setLoadingGastos] = useState<boolean>(false);
+
+  // ===== Cargar meta del grupo desde API =====
+  const fetchGrupoMeta = useCallback(async (gid: string) => {
+    if (!gid) return;
+    try {
+      setCargando(true);
+      // ✅ CORRECTO: usa query param grupoId (o podrías usar `/grupo/${gid}`)
+      const resp = await apiGrupo.get('/grupo', { params: { grupoId: gid } });
+
+      if (resp.status >= 200 && resp.status < 300 && resp.data) {
+        const g = resp.data;
+        setGrupo({
+          id: gid,
+          nombre: g.nombre ?? '',
+          descripcion: g.descripcion ?? '',
+          fecha_inicio: g.fecha_inicio ?? '',
+          fecha_cierre: g.fecha_cierre ?? '',
+          creador: g.creador_nombre ?? undefined,
+        });
+      } else {
+        Alert.alert('Error', `(${resp.status}) No se pudo cargar el grupo.`);
       }
-    })();
-    return () => { cancel = true; };
-  }, [id, nombre, descripcion, fecha_inicio, fecha_cierre, creador_nombre]);
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Error cargando el grupo.');
+    } finally {
+      setCargando(false);
+    }
+  }, []);
 
   // ===== Cargar gastos REALES por grupo =====
-  const [gastos, setGastos] = useState<Gasto[]>([]);
-  const [loadingGastos, setLoadingGastos] = useState<boolean>(true);
-
   const fetchGastos = useCallback(async (grupoId: string) => {
     if (!grupoId) return;
     try {
@@ -117,22 +119,39 @@ export default function DetalleGrupo() {
         }));
         setGastos(mapped);
       } else {
-        console.warn('Error /gastos', resp.status, resp.data);
         setGastos([]);
+        console.warn('Error /gastos', resp.status, resp.data);
       }
     } catch (e) {
-      console.warn('Error cargando gastos', e);
       setGastos([]);
+      console.warn('Error cargando gastos', e);
     } finally {
       setLoadingGastos(false);
     }
   }, []);
 
+  // Carga inicial
   useEffect(() => {
-    if (id) fetchGastos(String(id));
-  }, [id, fetchGastos]);
+    if (!id) return;
+    (async () => {
+      await fetchGrupoMeta(String(id));
+      await fetchGastos(String(id));
+    })();
+  }, [id, fetchGrupoMeta, fetchGastos]);
 
-  // Al crear un gasto desde otra pantalla, refrescamos/inyectamos
+  // Refresco al volver a enfocar
+  useFocusEffect(
+    useCallback(() => {
+      if (!id) return;
+      const t = setTimeout(() => {
+        fetchGrupoMeta(String(id));
+        fetchGastos(String(id));
+      }, 120);
+      return () => clearTimeout(t);
+    }, [id, fetchGrupoMeta, fetchGastos])
+  );
+
+  // Escucha: gasto creado
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('gasto:creado', (nuevo: any) => {
       const normalizado: Gasto = {
@@ -147,7 +166,7 @@ export default function DetalleGrupo() {
     return () => sub.remove();
   }, []);
 
-  const safePush = (href: Href) => router.push(href);
+  const safePush = (href: Href) => router.replace(href);
 
   const goRegistrarGasto = useCallback(() => {
     const groupId = String(grupo?.id ?? id ?? '');
@@ -160,7 +179,7 @@ export default function DetalleGrupo() {
   }, [grupo?.id, id, grupo?.nombre]);
 
   const verGasto = (gastoId: string) => {
-    safePush({ pathname: '/detallegasto', params: { gasto: gastoId } });
+    safePush({ pathname: '/detallegasto', params: { gasto: gastoId, grupoId: String(grupo?.id ?? id ?? '') } });
   };
 
   const editarGasto = (gastoId: string) => {
@@ -171,11 +190,7 @@ export default function DetalleGrupo() {
   const eliminarGasto = (gastoId: string) => {
     Alert.alert('Eliminar gasto', '¿Seguro que quieres eliminar este gasto?', [
       { text: 'Cancelar', style: 'cancel' },
-      {
-        text: 'Eliminar',
-        style: 'destructive',
-        onPress: () => setGastos(prev => prev.filter(g => g.id !== gastoId)),
-      },
+      { text: 'Eliminar', style: 'destructive', onPress: () => setGastos(prev => prev.filter(g => g.id !== gastoId)) },
     ]);
   };
 
@@ -195,24 +210,28 @@ export default function DetalleGrupo() {
         <LinearGradient colors={['#0EA5A4', '#14B8A6', '#10B981']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.headerGradient}>
           <View style={styles.headerContent}>
             <View style={styles.headerTop}>
-              <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]} hitSlop={10}>
+              <Pressable onPress={() => router.replace('/VerTodosLosGrupos')} style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]} hitSlop={10}>
                 <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
               </Pressable>
               <Text style={styles.appTitle}>Reparte+</Text>
-              <Pressable onPress={() => {
-                if (!grupo) return;
-                router.replace({
-                  pathname: '/CreacionGrupos',
-                  params: {
-                    modo: 'editar',
-                    id: String(grupo.id),
-                    nombre: grupo.nombre ?? '',
-                    descripcion: grupo.descripcion ?? '',
-                    fecha_inicio: grupo.fecha_inicio ?? '',
-                    fecha_cierre: grupo.fecha_cierre ?? '',
-                  },
-                } as const);
-              }} style={({ pressed }) => [styles.editGroupBtn, pressed && styles.editGroupBtnPressed]} hitSlop={10}>
+              <Pressable
+                onPress={() => {
+                  if (!grupo) return;
+                  router.replace({
+                    pathname: '/CreacionGrupos',
+                    params: {
+                      modo: 'editar',
+                      id: String(grupo.id),
+                      nombre: grupo.nombre ?? '',
+                      descripcion: grupo.descripcion ?? '',
+                      fecha_inicio: grupo.fecha_inicio ?? '',
+                      fecha_cierre: grupo.fecha_cierre ?? '',
+                    },
+                  } as const);
+                }}
+                style={({ pressed }) => [styles.editGroupBtn, pressed && styles.editGroupBtnPressed]}
+                hitSlop={10}
+              >
                 <MaterialCommunityIcons name="layers-edit" size={22} color="#fff" />
               </Pressable>
             </View>
@@ -252,17 +271,6 @@ export default function DetalleGrupo() {
           </View>
         </View>
 
-        {/* Hint de deslizamiento */}
-        {showScrollHint && (
-          <Pressable onPress={() => setShowScrollHint(false)} style={styles.scrollHint}>
-            <LinearGradient colors={['#E6FFFA', '#CCFBF1']} style={styles.hintGradient}>
-              <MaterialCommunityIcons name="gesture-swipe-horizontal" size={18} color={PRIMARY} />
-              <Text style={styles.hintText}>Desliza la tabla para ver más detalles</Text>
-              <MaterialCommunityIcons name="arrow-right" size={18} color={PRIMARY} />
-            </LinearGradient>
-          </Pressable>
-        )}
-
         {/* Tabla de gastos */}
         <Text style={styles.sectionTitle}>
           <MaterialCommunityIcons name="script-text-outline" size={20} color={TEXT} /> Registro de Gastos
@@ -300,8 +308,7 @@ export default function DetalleGrupo() {
                 gastos.map((item, idx) => {
                   const isPaid = item.estado === true;
                   return (
-                    <View key={item.id}
-                      style={[styles.tableRow, idx % 2 === 0 && styles.rowEven]}>
+                    <View key={item.id} style={[styles.tableRow, idx % 2 === 0 && styles.rowEven]}>
                       <View style={[styles.td, styles.colGasto]}>
                         <Text style={styles.conceptText} numberOfLines={2}>{item.concepto}</Text>
                       </View>
@@ -310,30 +317,20 @@ export default function DetalleGrupo() {
                       </View>
                       <View style={[styles.td, styles.colEstado, styles.centerContent]}>
                         <View style={[styles.statusBadge, isPaid ? styles.badgePaid : styles.badgePending]}>
-                          <MaterialCommunityIcons
-                            name={isPaid ? 'check-circle' : 'clock-outline'}
-                            size={14}
-                            color={isPaid ? '#047857' : '#DC2626'}
-                          />
+                          <MaterialCommunityIcons name={isPaid ? 'check-circle' : 'clock-outline'} size={14} color={isPaid ? '#047857' : '#DC2626'} />
                           <Text style={[styles.statusText, isPaid ? styles.statusPaid : styles.statusPending]}>
                             {isPaid ? 'Pagado' : 'Pendiente'}
                           </Text>
                         </View>
                       </View>
                       <View style={[styles.td, styles.colAcciones, styles.actionsCell]}>
-                        <Pressable onPress={() => verGasto(item.id)}
-                          style={({ pressed }) => [styles.actionButton, styles.viewButton, pressed && styles.actionPressed]}
-                          hitSlop={8}>
+                        <Pressable onPress={() => verGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.viewButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="eye-outline" size={16} color="#0EA5A4" />
                         </Pressable>
-                        <Pressable onPress={() => editarGasto(item.id)}
-                          style={({ pressed }) => [styles.actionButton, styles.editButton, pressed && styles.actionPressed]}
-                          hitSlop={8}>
+                        <Pressable onPress={() => editarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.editButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="pencil-outline" size={16} color="#F59E0B" />
                         </Pressable>
-                        <Pressable onPress={() => eliminarGasto(item.id)}
-                          style={({ pressed }) => [styles.actionButton, styles.deleteButton, pressed && styles.actionPressed]}
-                          hitSlop={8}>
+                        <Pressable onPress={() => eliminarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.deleteButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="delete-outline" size={16} color="#EF4444" />
                         </Pressable>
                       </View>
