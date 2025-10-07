@@ -161,7 +161,7 @@ export default function VerTodosLosGrupos() {
         creador_nombre: g.creador_nombre ?? '', // ← nuevo
       },
     };
-    router.push(href);
+    router.replace(href);
   }, []);
 
   const keyExtractor = useCallback((g: Grupo) => g.id, []);

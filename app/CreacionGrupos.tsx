@@ -2,7 +2,7 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
-import { obtenerIDparticipante } from '@/lib/funcionesParticipante';
+import { obtenerIDparticipante, obtenerNombreparticipante } from '@/lib/funcionesParticipante';
 import { router, useLocalSearchParams } from 'expo-router';
 
 const api = axios.create({
@@ -19,7 +19,10 @@ const toYMD = (d: Date) => {
   return `${y}-${m}-${day}`;
 };
 
+
+
 export default function CrearGrupo() {
+
   // --------- Params y modo ---------
   const params = useLocalSearchParams<{
     modo?: string; id?: string; nombre?: string; descripcion?: string; fecha_inicio?: string; fecha_cierre?: string;
@@ -33,6 +36,7 @@ export default function CrearGrupo() {
   const [enviando, setEnviando] = useState(false);
 
   const [nombreGrupo, setNombreGrupo] = useState(params.nombre ?? '');
+  const [CreadorNombre, setCreadorNombre] = useState('Desconocido');
   const [descripcionGrupo, setDescripcionGrupo] = useState(params.descripcion ?? '');
 
   const [fechaInicio, setFechaInicio] = useState<Date | null>(
@@ -49,6 +53,8 @@ export default function CrearGrupo() {
     if (modoEdicion) return;
     (async () => {
       const participante_id = await obtenerIDparticipante();
+      const creadorGrupo = await obtenerNombreparticipante()
+      setCreadorNombre(creadorGrupo);
       setParticipanteId(participante_id);
     })();
 
@@ -108,7 +114,8 @@ export default function CrearGrupo() {
               nombre: updates.nombre,
               descripcion: updates.descripcion,
               fecha_inicio: updates.fecha_inicio,
-              fecha_cierre: updates.fecha_cierre
+              fecha_cierre: updates.fecha_cierre,
+              creador_nombre: CreadorNombre
             }
           } as const);
         } else {
@@ -120,13 +127,18 @@ export default function CrearGrupo() {
           descripcion: descripcionGrupo.trim(),
           fecha_inicio: toYMD(fechaInicio),
           fecha_cierre: toYMD(fechaTermino),
-          creado_por: participanteId
+          creado_por: participanteId,
+          creador_nombre: CreadorNombre
         };
 
         const resp = await api.post('/grupo', payload);
 
         if (resp.status >= 200 && resp.status < 300) {
-          const nuevoId: number | string = resp.data?.grupoId ?? resp.data?.id;
+          const d = resp.data ?? {};
+          // La lambda devuelve: { Operation, Message, grupo: {...} }
+          // Compatibilidad con respuestas antiguas: grupoId / id en raíz
+          const g = d.grupo ?? {};
+          const nuevoId = String(g.grupo_id ?? g.id ?? d.grupoId ?? d.id ?? '');
           if (!nuevoId) {
             Alert.alert('OK', 'Grupo creado, pero no recibí el ID. Ve a la lista para verlo.');
             return;
@@ -139,7 +151,8 @@ export default function CrearGrupo() {
               nombre: payload.nombre,
               descripcion: payload.descripcion,
               fecha_inicio: payload.fecha_inicio,
-              fecha_cierre: payload.fecha_cierre
+              fecha_cierre: payload.fecha_cierre,
+              creador_nombre: String(payload.creador_nombre)
             }
           } as const);
         } else {
