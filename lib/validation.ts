@@ -1,7 +1,7 @@
 // lib/validations.ts
 import { z } from 'zod';
 
-/** ✅ Email normalizado y validado */
+/** Email normalizado y validado */
 const baseEmail = z
   .string() // (sin required_error)
   .trim()
@@ -20,7 +20,7 @@ const phoneSchema = z
     message: 'Teléfono inválido (8–15 dígitos)',
   });
 
-/** 🔐 Contraseña igual a la política por defecto de Cognito */
+/** Contraseña igual a la política por defecto de Cognito */
 const passwordSchema = z
   .string() // (sin required_error)
   .min(8, { message: 'La contraseña debe tener al menos 8 caracteres' })
@@ -29,18 +29,18 @@ const passwordSchema = z
   .refine((v) => /\d/.test(v),   { message: 'Debe incluir al menos un número' })
   .refine((v) => /[^A-Za-z0-9]/.test(v), { message: 'Debe incluir al menos un símbolo' });
 
-/** 🎟️ Token de invitación opcional */
+/** Token de invitación opcional */
 const SubCognitoSchema = z
   .string()
 
-/** 👤 Nombre requerido */
+/** Nombre requerido */
 const nameSchema = z
   .string() // (sin required_error)
   .trim()
   .min(2, { message: 'El nombre debe tener al menos 2 caracteres' })
   .max(80, { message: 'Máximo 80 caracteres' });
 
-/** 📦 Esquemas */
+/** Esquemas */
 export const registerSchema = z.object({
   name: nameSchema,
   email: baseEmail,
@@ -51,10 +51,6 @@ export const registerSchema = z.object({
 });
 export type RegisterSchema = z.infer<typeof registerSchema>;
 
-/**
- * Para login NO conviene validar complejidad (Cognito ya valida).
- * Solo pedimos que no venga vacío.
- */
 export const loginSchema = z.object({
   email: baseEmail,
   password: z.string().min(1, { message: 'Ingresa tu contraseña' }),

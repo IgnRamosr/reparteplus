@@ -15,7 +15,7 @@ export default function Index() {
         const token = await AsyncStorage.getItem('auth_token');
         if (navigated.current) return;
 
-        // 👇 Espera 2000ms antes de navegar (2 segundos)
+        // Espera 2000ms antes de navegar (2 segundos)
         setTimeout(() => {
           if (!navigated.current) {
             navigated.current = true;

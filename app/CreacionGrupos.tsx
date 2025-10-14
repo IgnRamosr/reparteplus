@@ -285,13 +285,13 @@ const estilos = StyleSheet.create({
   flex: 1,
   alignItems: 'center',
   paddingHorizontal: 24,
-  paddingTop: 16,           // menos empuje desde arriba
+  paddingTop: 16,           
 },
   header: {
   width: '100%',
   alignItems: 'center',
-  marginTop: 80,            // 🔽 baja el bloque del título
-  marginBottom: 24,         // espacio hacia el formulario
+  marginTop: 80,            
+  marginBottom: 24,         
 },
 
   headerInner: { width: '100%', alignItems: 'center', gap: 6 },
@@ -344,7 +344,7 @@ const estilos = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
   },
-  // 👇 highlight para los "inputs" de fecha
+  // highlight para los "inputs" de fecha
   inputLikePressed: {
     backgroundColor: '#F0FBFA',
     transform: [{ scale: 0.99 }],
@@ -365,7 +365,7 @@ const estilos = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
-  // 👇 highlight del botón principal
+  //  highlight del botón principal
   btnPrimaryPressed: {
     backgroundColor: '#14B8A6',
     transform: [{ scale: 0.98 }],

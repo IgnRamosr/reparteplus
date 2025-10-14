@@ -88,7 +88,7 @@ export default function RegisterScreen() {
       justifyContent: 'center',
       backgroundColor: PRIMARY,
     },
-    // 👇 estado presionado (highlight)
+    // estado presionado (highlight)
     buttonPressed: {
       backgroundColor: '#14B8A6',
       transform: [{ scale: 0.98 }],

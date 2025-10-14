@@ -12,7 +12,7 @@
     };
 
     export default function InvitarParticipantes() {
-    // ⬇️ Datos del grupo desde los parámetros
+    // Datos del grupo desde los parámetros
     const { grupoId, nombreGrupo } = useLocalSearchParams<Params>();
 
     const [correoUsuario, setCorreoUsuario] = useState('');
@@ -26,7 +26,7 @@
             pathname: '/DetalleGrupo',
             params: { id: gid, _refresh: Date.now().toString() },
         });
-        return true; // consumimos el back
+        return true; 
         }
         router.back();
         return true;

@@ -40,6 +40,7 @@ type Gasto = {
   pagador: string;
   estado: boolean;
   moneda?: string;
+  monto?: string | number; 
 };
 
 export default function DetalleGrupo() {
@@ -79,7 +80,6 @@ export default function DetalleGrupo() {
     if (!gid) return;
     try {
       setCargando(true);
-      // ✅ CORRECTO: usa query param grupoId (o podrías usar `/grupo/${gid}`)
       const resp = await apiGrupo.get('/grupo', { params: { grupoId: gid } });
 
       if (resp.status >= 200 && resp.status < 300 && resp.data) {
@@ -116,6 +116,7 @@ export default function DetalleGrupo() {
           pagador: String(r.pagador ?? r.pagador_nombre ?? r.nombre_pagador ?? '—'),
           estado: typeof r.estado === 'boolean' ? r.estado : Boolean(r.pagado ?? false),
           moneda: r.moneda ?? 'CLP',
+          monto: r.monto ?? undefined, 
         }));
         setGastos(mapped);
       } else {
@@ -160,6 +161,7 @@ export default function DetalleGrupo() {
         pagador: String(nuevo.pagador ?? nuevo.pagador_nombre ?? '—'),
         estado: typeof nuevo.estado === 'boolean' ? nuevo.estado : Boolean(nuevo.pagado ?? false),
         moneda: nuevo.moneda ?? 'CLP',
+        monto: nuevo.monto ?? undefined,
       };
       setGastos(prev => [normalizado, ...prev]);
     });
@@ -182,16 +184,79 @@ export default function DetalleGrupo() {
     safePush({ pathname: '/detallegasto', params: { gasto: gastoId, grupoId: String(grupo?.id ?? id ?? '') } });
   };
 
-  const editarGasto = (gastoId: string) => {
+  // ===== Navegar a pantalla de edición =====
+  const goEditarGasto = (gastoId: string) => {
     const groupId = String(grupo?.id ?? id ?? '');
-    safePush({ pathname: '/EditarGasto', params: { grupo: groupId, gasto: gastoId } });
+    safePush({ pathname: '/EditarGasto', params: { grupo: groupId, gasto: gastoId, nombreGrupo: grupo?.nombre } });
   };
 
-  const eliminarGasto = (gastoId: string) => {
-    Alert.alert('Eliminar gasto', '¿Seguro que quieres eliminar este gasto?', [
-      { text: 'Cancelar', style: 'cancel' },
-      { text: 'Eliminar', style: 'destructive', onPress: () => setGastos(prev => prev.filter(g => g.id !== gastoId)) },
-    ]);
+  // ==== ACTUALIZAR GASTO (PATCH) ====
+  const actualizarGasto = async (
+    gastoId: string,
+    { descripciongasto, moneda, monto }: { descripciongasto: string; moneda: string; monto: string }
+  ) => {
+    try {
+      const resp = await apiGasto.patch('/gasto', {
+        gastoId: Number(gastoId),
+        updates: {
+          descripciongasto,
+          moneda,
+          monto,
+        },
+      });
+
+      if (resp.status >= 200 && resp.status < 300) {
+        Alert.alert('Éxito', 'Gasto actualizado correctamente.');
+
+        // Refresca localmente si la lista está cargada en esta pantalla
+        setGastos(prev =>
+          prev.map(g =>
+            g.id === String(gastoId)
+              ? { ...g, concepto: descripciongasto, moneda, monto }
+              : g
+          )
+        );
+      } else {
+        console.warn('Respuesta PATCH gasto:', resp.data);
+        Alert.alert('Error', `No se pudo actualizar el gasto. Código: ${resp.status}`);
+      }
+    } catch (e: any) {
+      console.error('Error al actualizar gasto:', e);
+      Alert.alert('Error', e?.message || 'No se pudo conectar con el servidor.');
+    }
+  };
+
+  // ==== ELIMINAR GASTO (DELETE con body) ====
+  const eliminarGasto = async (gastoId: string) => {
+    Alert.alert(
+      'Eliminar gasto',
+      '¿Seguro que quieres eliminar este gasto?',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const resp = await apiGasto.delete('/gasto', {
+                data: { gastoId }, // en body, no en la URL
+              });
+
+              if (resp.status >= 200 && resp.status < 300) {
+                setGastos(prev => prev.filter(g => g.id !== gastoId));
+                Alert.alert('Éxito', 'Gasto eliminado correctamente.');
+              } else {
+                console.warn('Error al eliminar gasto', resp.data);
+                Alert.alert('Error', `No se pudo eliminar el gasto. Código: ${resp.status}`);
+              }
+            } catch (error: any) {
+              console.error('Error al eliminar gasto:', error);
+              Alert.alert('Error', error?.message || 'No se pudo conectar con el servidor.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Hint "desliza la tabla"
@@ -327,7 +392,7 @@ export default function DetalleGrupo() {
                         <Pressable onPress={() => verGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.viewButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="eye-outline" size={16} color="#0EA5A4" />
                         </Pressable>
-                        <Pressable onPress={() => editarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.editButton, pressed && styles.actionPressed]} hitSlop={8}>
+                        <Pressable onPress={() => goEditarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.editButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="pencil-outline" size={16} color="#F59E0B" />
                         </Pressable>
                         <Pressable onPress={() => eliminarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.deleteButton, pressed && styles.actionPressed]} hitSlop={8}>

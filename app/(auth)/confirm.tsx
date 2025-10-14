@@ -8,7 +8,7 @@ import {
   authConfirm,
   authResend,
   getCognitoSub,
-  authSignIn,   // 👈 añadido
+  authSignIn,  
   // authSignOut,
 } from "../../lib/auth";
 import { api } from "../../lib/api";
@@ -32,8 +32,8 @@ export default function ConfirmScreen() {
   const [busy, setBusy]   = useState(false);
 
   // ========= SOLO ESTILOS: LedgerTeal =========
-  const PRIMARY = '#0EA5A4'; // teal
-  const BG = '#F8FBFC';      // casi blanco azulado
+  const PRIMARY = '#0EA5A4'; 
+  const BG = '#F8FBFC';      
   const TEXT_MUTED = '#64748B';
   const BORDER = '#E2E8F0';
 
@@ -69,7 +69,7 @@ export default function ConfirmScreen() {
       justifyContent: "center",
       backgroundColor: PRIMARY,
     },
-    // 👇 highlight al presionar
+    // highlight al presionar
     buttonPressed: {
       backgroundColor: '#14B8A6',
       transform: [{ scale: 0.98 }],
@@ -118,7 +118,7 @@ export default function ConfirmScreen() {
           name,
           email: emailNorm,
           phone,          // tu API lo espera como string
-          sub_cognito: sub // 👈 usa el sub real obtenido tras el sign-in
+          sub_cognito: sub // usa el sub real obtenido tras el sign-in
         });
 
         const datosUsuario = await api.login({ email, password});

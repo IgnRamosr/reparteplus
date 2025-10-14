@@ -58,7 +58,7 @@ const enviarInvitacion = async () => {
         Alert.alert('Invitación creada', 'La invitación fue generada correctamente.');
         }
         router.back();
-      } else if (resp.status = 400) { // <-- lógica original intacta
+    } else if (resp.status = 400) { 
         const msg = resp.data?.message || 'Ya existe una invitación registrada o aceptada para este correo en este grupo.';
         Alert.alert('Error', `${msg}`);
     } else {
@@ -197,7 +197,7 @@ btnPrimary: {
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
 },
-  // 👇 highlight del botón
+  // highlight del botón
 btnPrimaryPressed: {
     backgroundColor: '#14B8A6',
     transform: [{ scale: 0.98 }],

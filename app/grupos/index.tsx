@@ -49,7 +49,7 @@ export default function VerTodosLosGrupos() {
         <Text style={estilos.subtitulo}>Ver todos los grupos</Text>
       </View>
 
-      {/* Lista de tarjetas estilo "outline" (como tus botones secundarios) */}
+      {/* Lista de tarjetas estilo "outline" (como los botones secundarios) */}
       <FlatList
         data={grupos}
         keyExtractor={(g) => g.id.toString()}

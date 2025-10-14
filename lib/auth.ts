@@ -12,8 +12,6 @@ import {
 } from 'aws-amplify/auth';
 
 
-
-
 // Helpers
 const normEmail = (e: string) => e.trim().toLowerCase();
 const normPwd   = (p: string) => p.trim();
@@ -50,7 +48,7 @@ async function getSignedInUsernameLower(): Promise<string | null> {
 }
 
 // ───────────────────────────────────────────────────────────────────────────────
-// NUEVO: obtener el sub de Cognito (userId en v6) con fallbacks
+//  obtener el sub de Cognito (userId en v6) con fallbacks
 export async function getCognitoSub(): Promise<string | null> {
   // 1) Fuente principal: getCurrentUser().userId
   try {
@@ -80,7 +78,7 @@ export async function getCognitoSub(): Promise<string | null> {
     }
   } catch {}
 
-  // 3) Último recurso: decodificar ID token (si existiera)
+  // 3) Último recurso: decodificar ID token 
   try {
     const s = await fetchAuthSession() as any;
     const jwt: string | undefined = s?.tokens?.idToken?.toString?.();
