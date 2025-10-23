@@ -451,19 +451,7 @@ export default function DetalleGastoScreen() {
 
       {/* Botones */}
       <View style={s.buttonGroup}>
-        <Pressable
-          onPress={() => {}}
-          style={({ pressed }) => [s.secondaryBtn, pressed && s.secondaryBtnPressed]}
-          android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        >
-          <View style={s.btnContent}>
-            <View style={s.btnIconCircle}>
-              <MaterialCommunityIcons name="chart-donut" size={18} color={PRIMARY} />
-            </View>
-            <Text style={s.secondaryBtnText}>Ver gráfico</Text>
-          </View>
-        </Pressable>
-
+        
         <Pressable
           onPress={onExportPdf}
           disabled={disableExport}

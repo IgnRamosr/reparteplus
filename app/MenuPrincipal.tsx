@@ -129,24 +129,6 @@ export default function MenuPrincipal() {
           </View>
           <MaterialCommunityIcons name="chevron-right" size={24} color={PRIMARY} style={estilos.chevron} />
         </Pressable>
-
-        {/* Finalizar evento */}
-        <Pressable
-          onPress={() => Alert.alert('Pendiente', 'Conectar con el flujo de cierre.')}
-          style={({ pressed }) => [
-            estilos.botonSecundario,
-            pressed && estilos.botonSecundarioPressed
-          ]}
-        >
-          <View style={[estilos.botonIcono, estilos.botonIconoSecundario]}>
-            <MaterialCommunityIcons name="check-circle-outline" size={24} color={PRIMARY} />
-          </View>
-          <View style={estilos.botonContent}>
-            <Text style={estilos.botonTextoSecundario}>Finalizar evento</Text>
-            <Text style={estilos.botonDescripcionSec}>Cierra un grupo</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color={PRIMARY} style={estilos.chevron} />
-        </Pressable>
       </View>
 
       {/* Footer decorativo */}

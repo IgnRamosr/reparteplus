@@ -40,7 +40,7 @@ type Gasto = {
   pagador: string;
   estado: boolean;
   moneda?: string;
-  monto?: string | number; 
+  monto?: string | number;
 };
 
 export default function DetalleGrupo() {
@@ -56,7 +56,6 @@ export default function DetalleGrupo() {
 
   const { id, nombre, descripcion, fecha_inicio, fecha_cierre, creador_nombre } = params;
   const { width: SCREEN_W } = useWindowDimensions();
-  const SMALL = SCREEN_W < 360;
 
   const [cargando, setCargando] = useState<boolean>(false);
   const [grupo, setGrupo] = useState<Grupo | null>(() =>
@@ -116,7 +115,7 @@ export default function DetalleGrupo() {
           pagador: String(r.pagador ?? r.pagador_nombre ?? r.nombre_pagador ?? '—'),
           estado: typeof r.estado === 'boolean' ? r.estado : Boolean(r.pagado ?? false),
           moneda: r.moneda ?? 'CLP',
-          monto: r.monto ?? undefined, 
+          monto: r.monto ?? undefined,
         }));
         setGastos(mapped);
       } else {
@@ -170,6 +169,7 @@ export default function DetalleGrupo() {
 
   const safePush = (href: Href) => router.replace(href);
 
+  // === Navegaciones / acciones ===
   const goRegistrarGasto = useCallback(() => {
     const groupId = String(grupo?.id ?? id ?? '');
     safePush({ pathname: '/RegistrarGasto', params: { grupo: groupId } });
@@ -180,14 +180,44 @@ export default function DetalleGrupo() {
     safePush({ pathname: '/InvitacionParticipantesGeneral', params: { grupoId: groupId, nombreGrupo: grupo?.nombre } });
   }, [grupo?.id, id, grupo?.nombre]);
 
+  const goConfirmacionInvitados = () => {
+    const groupId = String(grupo?.id ?? id ?? '');
+    router.replace({
+      pathname: '/ConfirmacionInvitados',
+      params: {
+        grupo: groupId,
+        groupName: grupo?.nombre ?? '',        // ← nombre del grupo
+        creador_nombre: grupo?.creador ?? '',  // ← creador
+      },
+    });
+  };
+
   const verGasto = (gastoId: string) => {
     safePush({ pathname: '/detallegasto', params: { gasto: gastoId, grupoId: String(grupo?.id ?? id ?? '') } });
   };
 
-  // ===== Navegar a pantalla de edición =====
   const goEditarGasto = (gastoId: string) => {
     const groupId = String(grupo?.id ?? id ?? '');
     safePush({ pathname: '/EditarGasto', params: { grupo: groupId, gasto: gastoId, nombreGrupo: grupo?.nombre } });
+  };
+
+  const verGrafico = useCallback(() => {
+  const groupId = String(grupo?.id ?? id ?? '');
+  router.push({
+    pathname: './GraficoGastosEvento',
+    params: {
+      id: groupId,
+      nombre: grupo?.nombre ?? '',
+    },
+  });
+  }, [grupo?.id, id, grupo?.nombre]);
+
+ // Placeholders en construcción
+  const eliminarGrupo = () => {
+    Alert.alert('En construcción', 'La eliminación de grupos estará disponible pronto.');
+  };
+  const cerrarGrupo = () => {
+    Alert.alert('En construcción', 'El cierre de grupos estará disponible pronto.');
   };
 
   // ==== ACTUALIZAR GASTO (PATCH) ====
@@ -198,17 +228,11 @@ export default function DetalleGrupo() {
     try {
       const resp = await apiGasto.patch('/gasto', {
         gastoId: Number(gastoId),
-        updates: {
-          descripciongasto,
-          moneda,
-          monto,
-        },
+        updates: { descripciongasto, moneda, monto },
       });
 
       if (resp.status >= 200 && resp.status < 300) {
         Alert.alert('Éxito', 'Gasto actualizado correctamente.');
-
-        // Refresca localmente si la lista está cargada en esta pantalla
         setGastos(prev =>
           prev.map(g =>
             g.id === String(gastoId)
@@ -227,7 +251,7 @@ export default function DetalleGrupo() {
   };
 
   // ==== ELIMINAR GASTO (DELETE con body) ====
-  const eliminarGasto = async (gastoId: string) => {
+  const eliminarGastoItem = async (gastoId: string) => {
     Alert.alert(
       'Eliminar gasto',
       '¿Seguro que quieres eliminar este gasto?',
@@ -238,10 +262,7 @@ export default function DetalleGrupo() {
           style: 'destructive',
           onPress: async () => {
             try {
-              const resp = await apiGasto.delete('/gasto', {
-                data: { gastoId }, // en body, no en la URL
-              });
-
+              const resp = await apiGasto.delete('/gasto', { data: { gastoId } });
               if (resp.status >= 200 && resp.status < 300) {
                 setGastos(prev => prev.filter(g => g.id !== gastoId));
                 Alert.alert('Éxito', 'Gasto eliminado correctamente.');
@@ -266,7 +287,9 @@ export default function DetalleGrupo() {
   const onTableContainerLayout = (w: number) => setTableContainerW(w);
   const onTableContentSizeChange = (contentW: number) => setTableContentW(contentW);
   useEffect(() => { setShowScrollHint(tableContentW > tableContainerW + 1); }, [tableContainerW, tableContentW]);
-  const handleTableScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => { if (e.nativeEvent.contentOffset.x > 8 && showScrollHint) setShowScrollHint(false); };
+  const handleTableScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (e.nativeEvent.contentOffset.x > 8 && showScrollHint) setShowScrollHint(false);
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: BG }} edges={['top', 'left', 'right']}>
@@ -278,27 +301,40 @@ export default function DetalleGrupo() {
               <Pressable onPress={() => router.replace('/VerTodosLosGrupos')} style={({ pressed }) => [styles.backBtn, pressed && styles.backBtnPressed]} hitSlop={10}>
                 <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
               </Pressable>
+
               <Text style={styles.appTitle}>Reparte+</Text>
-              <Pressable
-                onPress={() => {
-                  if (!grupo) return;
-                  router.replace({
-                    pathname: '/CreacionGrupos',
-                    params: {
-                      modo: 'editar',
-                      id: String(grupo.id),
-                      nombre: grupo.nombre ?? '',
-                      descripcion: grupo.descripcion ?? '',
-                      fecha_inicio: grupo.fecha_inicio ?? '',
-                      fecha_cierre: grupo.fecha_cierre ?? '',
-                    },
-                  } as const);
-                }}
-                style={({ pressed }) => [styles.editGroupBtn, pressed && styles.editGroupBtnPressed]}
-                hitSlop={10}
-              >
-                <MaterialCommunityIcons name="layers-edit" size={22} color="#fff" />
-              </Pressable>
+
+              {/* Botonera superior derecha: Editar, Basurero (eliminar grupo), Gráfico */}
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                <Pressable
+                  onPress={() => {
+                    if (!grupo) return;
+                    router.replace({
+                      pathname: '/CreacionGrupos',
+                      params: {
+                        modo: 'editar',
+                        id: String(grupo.id),
+                        nombre: grupo.nombre ?? '',
+                        descripcion: grupo.descripcion ?? '',
+                        fecha_inicio: grupo.fecha_inicio ?? '',
+                        fecha_cierre: grupo.fecha_cierre ?? '',
+                      },
+                    } as const);
+                  }}
+                  style={({ pressed }) => [styles.iconTopBtn, pressed && styles.iconTopBtnPressed]}
+                  hitSlop={10}
+                >
+                  <MaterialCommunityIcons name="pencil-outline" size={22} color="#fff" />
+                </Pressable>
+
+                <Pressable onPress={eliminarGrupo} style={({ pressed }) => [styles.iconTopBtn, pressed && styles.iconTopBtnPressed]} hitSlop={10}>
+                  <MaterialCommunityIcons name="trash-can-outline" size={22} color="#fff" />
+                </Pressable>
+
+                <Pressable disabled={true} onPress={verGrafico} style={({ pressed }) => [styles.iconTopBtn, pressed && styles.iconTopBtnPressed]} hitSlop={10}>
+                  <MaterialCommunityIcons name="chart-line" size={22} color="#fff" />
+                </Pressable>
+              </View>
             </View>
 
             {cargando && !grupo?.nombre ? (
@@ -395,7 +431,7 @@ export default function DetalleGrupo() {
                         <Pressable onPress={() => goEditarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.editButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="pencil-outline" size={16} color="#F59E0B" />
                         </Pressable>
-                        <Pressable onPress={() => eliminarGasto(item.id)} style={({ pressed }) => [styles.actionButton, styles.deleteButton, pressed && styles.actionPressed]} hitSlop={8}>
+                        <Pressable onPress={() => eliminarGastoItem(item.id)} style={({ pressed }) => [styles.actionButton, styles.deleteButton, pressed && styles.actionPressed]} hitSlop={8}>
                           <MaterialCommunityIcons name="delete-outline" size={16} color="#EF4444" />
                         </Pressable>
                       </View>
@@ -407,18 +443,22 @@ export default function DetalleGrupo() {
           </ScrollView>
         </View>
 
-        {/* Botones de acción */}
-        <View style={styles.floatingActions}>
-          <Pressable onPress={goRegistrarGasto} style={({ pressed }) => [pressed && styles.buttonScale]}>
-            <LinearGradient colors={['#0EA5A4', '#14B8A6']} style={styles.primaryButton}>
-              <MaterialCommunityIcons name="plus-circle-outline" size={20} color="#fff" />
-              <Text style={styles.primaryButtonText}>Registrar gasto</Text>
-            </LinearGradient>
+        {/* --- Botonera inferior (4 botones) --- */}
+        <View style={styles.bottomButtonsRow}>
+          <Pressable onPress={goInvitar} style={({ pressed }) => [styles.bottomBtn, pressed && styles.bottomBtnPressed]}>
+            <MaterialCommunityIcons name="account-plus-outline" size={22} color="#fff" />
           </Pressable>
 
-          <Pressable onPress={goInvitar} style={({ pressed }) => [styles.secondaryButton, pressed && styles.secondaryPressed]}>
-            <MaterialCommunityIcons name="account-plus-outline" size={20} color={PRIMARY} />
-            <Text style={styles.secondaryButtonText}>Añadir participantes</Text>
+          <Pressable onPress={goConfirmacionInvitados} style={({ pressed }) => [styles.bottomBtn, pressed && styles.bottomBtnPressed]}>
+            <MaterialCommunityIcons name="account-group-outline" size={22} color="#fff" />
+          </Pressable>
+
+          <Pressable onPress={goRegistrarGasto} style={({ pressed }) => [styles.bottomBtn, pressed && styles.bottomBtnPressed]}>
+            <MaterialCommunityIcons name="note-edit-outline" size={22} color="#fff" />
+          </Pressable>
+
+          <Pressable onPress={cerrarGrupo} style={({ pressed }) => [styles.bottomBtn, pressed && styles.bottomBtnPressed]}>
+            <MaterialCommunityIcons name="lock-outline" size={22} color="#fff" />
           </Pressable>
         </View>
       </ScrollView>
@@ -465,12 +505,14 @@ const styles = StyleSheet.create({
   },
   headerContent: { paddingHorizontal: 20 },
   headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+
   backBtn: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)' },
   backBtnPressed: { backgroundColor: 'rgba(255,255,255,0.25)', transform: [{ scale: 0.95 }] },
 
   appTitle: { fontSize: 20, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
-  editGroupBtn: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)' },
-  editGroupBtnPressed: { backgroundColor: 'rgba(255,255,255,0.25)', transform: [{ scale: 0.95 }] },
+
+  iconTopBtn: { padding: 10, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.15)' },
+  iconTopBtnPressed: { backgroundColor: 'rgba(255,255,255,0.25)', transform: [{ scale: 0.95 }] },
 
   loadingHeader: { alignItems: 'center', paddingVertical: 20 },
   loadingText: { color: 'rgba(255,255,255,0.9)', marginTop: 8, fontSize: 14 },
@@ -485,11 +527,8 @@ const styles = StyleSheet.create({
   infoLabel: { fontSize: 11, color: TEXT_MUTED, fontWeight: '600', marginTop: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
   infoValue: { fontSize: 13, color: TEXT, fontWeight: '700', marginTop: 4 },
 
-  scrollHint: { marginHorizontal: 20, marginTop: 16, marginBottom: 8 },
-  hintGradient: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, paddingHorizontal: 16, borderRadius: 12, gap: 8 },
-  hintText: { color: PRIMARY, fontWeight: '600', fontSize: 13 },
-
   sectionTitle: { fontSize: 18, fontWeight: '700', color: TEXT, marginHorizontal: 20, marginTop: 20, marginBottom: 12 },
+
   tableWrapper: { marginHorizontal: 20, marginTop: 8 },
   table: {
     backgroundColor: CARD, borderRadius: 16, overflow: 'hidden',
@@ -531,21 +570,29 @@ const styles = StyleSheet.create({
   emptyTitle: { fontSize: 16, fontWeight: '600', color: TEXT, marginTop: 12 },
   emptyDesc: { fontSize: 13, color: TEXT_MUTED, marginTop: 4 },
 
-  floatingActions: { marginHorizontal: 20, marginTop: 24, gap: 12 },
-  buttonScale: { transform: [{ scale: 0.98 }] },
-  primaryButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    paddingVertical: 16, borderRadius: 16, gap: 8,
-    shadowColor: PRIMARY, shadowOpacity: 0.25, shadowRadius: 12, shadowOffset: { width: 0, height: 6 }, elevation: 5,
+  
+  bottomButtonsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginHorizontal: 20,
+    marginTop: 22,
+    marginBottom: 30,
+    gap: 12,
   },
-  primaryButtonText: { color: '#fff', fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
-
-  secondaryButton: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: CARD, borderRadius: 20, padding: 18, marginBottom: 14,
-    borderWidth: 1.5, borderColor: BORDER, shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 }, elevation: 2,
+  bottomBtn: {
+    flex: 1,
+    backgroundColor: PRIMARY,       
+    paddingVertical: 18,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,                  
+    borderColor: SECONDARY,
+    shadowColor: PRIMARY,            
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
   },
-  secondaryPressed: { backgroundColor: '#F0FDFA', borderColor: PRIMARY, transform: [{ scale: 0.98 }] },
-  secondaryButtonText: { color: SECONDARY, fontSize: 16, fontWeight: '600', letterSpacing: -0.2 },
+  bottomBtnPressed: { opacity: 0.92, transform: [{ scale: 0.98 }] },
 });
