@@ -1,7 +1,7 @@
     // app/InvitarQR.tsx
     import React, { useEffect, useMemo, useState, useCallback } from "react";
-    import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator } from "react-native";
-    import { router, useLocalSearchParams } from "expo-router";
+    import { View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, BackHandler } from "react-native";
+    import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
     import QRCode from "react-native-qrcode-svg";
     import * as Clipboard from "expo-clipboard";
     import axios from "axios";
@@ -15,11 +15,26 @@
 
     type Params = { grupoId?: string; nombreGrupo?: string; participanteId?: string };
 
+
+
     export default function InvitarQR() {
     const { grupoId, nombreGrupo, participanteId } = useLocalSearchParams<Params>();
     const [qrUrl, setQrUrl] = useState<string | null>(null);
     const [expiresAt, setExpiresAt] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
+
+    useFocusEffect(
+    React.useCallback(() => {
+    const onBack = () => {
+    router.replace({
+        pathname:"/InvitacionParticipantesGeneral",
+        params:{grupoId,nombreGrupo}
+    }); // <-- destino
+    return true;               // consumimos el back
+    };
+    BackHandler.addEventListener("hardwareBackPress", onBack);
+    }, [])
+    );
 
     const crearQR = useCallback(async () => {
         if (!grupoId || !nombreGrupo || !participanteId) {

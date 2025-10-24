@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   Pressable,
   RefreshControl,
@@ -10,7 +11,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
@@ -208,6 +209,19 @@ export default function ConfirmacionInvitados() {
       }
     },
     [groupId, groupNameParam, fetchCreatorFallback]
+  );
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBack = () => {
+        router.replace({
+          pathname:"/DetalleGrupo",
+          params:{id:groupId}
+        }); // <-- destino
+        return true;               // consumimos el back
+      };
+      BackHandler.addEventListener("hardwareBackPress", onBack);
+    }, [])
   );
 
   useEffect(() => {

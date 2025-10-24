@@ -1,9 +1,10 @@
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import axios from 'axios';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, BackHandler, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { obtenerIDparticipante, obtenerNombreparticipante } from '@/lib/funcionesParticipante';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import React from 'react';
 
 const api = axios.create({
   baseURL: 'https://ee61hfpl8e.execute-api.us-east-1.amazonaws.com/production',
@@ -48,6 +49,21 @@ export default function CrearGrupo() {
 
   const [showInicio, setShowInicio] = useState(false);
   const [showTermino, setShowTermino] = useState(false);
+
+  if(modoEdicion){
+      useFocusEffect(
+      React.useCallback(() => {
+      const onBack = () => {
+      router.replace({
+          pathname:"/DetalleGrupo",
+          params:{id: grupoId}
+      }); // <-- destino
+      return true;               // consumimos el back
+      };
+      BackHandler.addEventListener("hardwareBackPress", onBack);
+      }, [])
+      );
+  }
 
   useEffect(() => {
     if (modoEdicion) return;

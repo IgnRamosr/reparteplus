@@ -3,6 +3,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Alert,
   DeviceEventEmitter, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent, Platform,
+  BackHandler,
 } from 'react-native';
 import { useLocalSearchParams, router, type Href } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -149,6 +150,18 @@ export default function DetalleGrupo() {
       }, 120);
       return () => clearTimeout(t);
     }, [id, fetchGrupoMeta, fetchGastos])
+  );
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const onBack = () => {
+        router.replace({
+          pathname:"/MenuPrincipal",
+        }); // <-- destino
+        return true;               // consumimos el back
+      };
+      BackHandler.addEventListener("hardwareBackPress", onBack);
+    }, [])
   );
 
   // Escucha: gasto creado

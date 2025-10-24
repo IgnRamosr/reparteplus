@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, TextInput, View, ActivityIndicator, BackHandler } from 'react-native';
 import axios from 'axios';
-import { useLocalSearchParams, router } from 'expo-router';
+import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 
 const api = axios.create({
 baseURL: 'https://qopxyt66x8.execute-api.us-east-1.amazonaws.com/production',
@@ -72,6 +72,19 @@ const enviarInvitacion = async () => {
     setEnviando(false);
     }
 };
+
+useFocusEffect(
+    React.useCallback(() => {
+    const onBack = () => {
+        router.replace({
+        pathname:"/InvitacionParticipantesGeneral",
+        params:{grupoId, nombreGrupo}
+        }); // <-- destino
+        return true;               // consumimos el back
+    };
+    BackHandler.addEventListener("hardwareBackPress", onBack);
+    }, [])
+);
 
 return (
     <View style={estilos.container}>

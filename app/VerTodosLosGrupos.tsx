@@ -171,7 +171,7 @@ export default function VerTodosLosGrupos() {
       {/* Header */}
       <View style={estilos.header}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => router.replace('/MenuPrincipal')}
           style={({ pressed }) => [estilos.backBtn, pressed && estilos.backBtnPressed]}
           hitSlop={10}
           android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}

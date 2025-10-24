@@ -96,7 +96,7 @@ export default function MenuPrincipal() {
 
         {/* Pagar saldo pendiente */}
         <Pressable
-          onPress={() => router.push('/PagarSaldoPendiente')}
+          onPress={() => router.replace('/PagarSaldoPendiente')}
           style={({ pressed }) => [
             estilos.botonSecundario,
             pressed && estilos.botonSecundarioPressed
@@ -114,7 +114,7 @@ export default function MenuPrincipal() {
 
         {/* Ver todos los grupos */}
         <Pressable
-          onPress={() => router.push('/VerTodosLosGrupos')}
+          onPress={() => router.replace('/VerTodosLosGrupos')}
           style={({ pressed }) => [
             estilos.botonSecundario,
             pressed && estilos.botonSecundarioPressed
@@ -133,14 +133,14 @@ export default function MenuPrincipal() {
 
         {/* Ver todos los grupos */}
         <Pressable
-          onPress={() => router.push('/EscanearQR')}
+          onPress={() => router.replace('/EscanearQR')}
           style={({ pressed }) => [
             estilos.botonSecundario,
             pressed && estilos.botonSecundarioPressed
           ]}
         >
           <View style={[estilos.botonIcono, estilos.botonIconoSecundario]}>
-            <MaterialCommunityIcons name="view-grid-outline" size={24} color={PRIMARY} />
+            <MaterialCommunityIcons name="qrcode-scan" size={24} color={PRIMARY} />
           </View>
           <View style={estilos.botonContent}>
             <Text style={estilos.botonTextoSecundario}>Escanear QR de grupo</Text>
