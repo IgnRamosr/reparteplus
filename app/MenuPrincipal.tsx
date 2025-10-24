@@ -149,6 +149,24 @@ export default function MenuPrincipal() {
         </Pressable>
       </View>
 
+        {/* Ver todos los grupos */}
+        <Pressable
+          onPress={() => router.push('/EscanearQR')}
+          style={({ pressed }) => [
+            estilos.botonSecundario,
+            pressed && estilos.botonSecundarioPressed
+          ]}
+        >
+          <View style={[estilos.botonIcono, estilos.botonIconoSecundario]}>
+            <MaterialCommunityIcons name="view-grid-outline" size={24} color={PRIMARY} />
+          </View>
+          <View style={estilos.botonContent}>
+            <Text style={estilos.botonTextoSecundario}>Escanear QR de grupo</Text>
+            <Text style={estilos.botonDescripcionSec}>Unete rápidamente a un grupo</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={24} color={PRIMARY} style={estilos.chevron} />
+        </Pressable>
+
       {/* Footer decorativo */}
       <View style={estilos.footer}>
         <View style={estilos.footerLine} />

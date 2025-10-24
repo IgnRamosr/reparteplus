@@ -58,7 +58,7 @@ const enviarInvitacion = async () => {
         Alert.alert('Invitación creada', 'La invitación fue generada correctamente.');
         }
         router.back();
-      } else if (resp.status = 400) { // <-- lógica original intacta
+      } else if (resp.status = 400) { 
         const msg = resp.data?.message || 'Ya existe una invitación registrada o aceptada para este correo en este grupo.';
         Alert.alert('Error', `${msg}`);
     } else {

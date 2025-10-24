@@ -380,3 +380,4 @@ primaryBtn: {
 primaryBtnPressed: { backgroundColor: '#14B8A6', transform: [{ scale: 0.985 }], shadowOpacity: 0.12, elevation: 3 },
 primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });
+
