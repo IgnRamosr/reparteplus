@@ -42,7 +42,7 @@ const apiGasto = axios.create({
 type Fila = {
   id: string;
   nombre: string;
-  pendiente: string; // formateado "12.345 CLP"
+  pendiente: string; 
   pagado: boolean;
 };
 
@@ -127,7 +127,6 @@ const escapeHtml = (s: string) =>
 // Carga un asset local y lo devuelve como data URI base64 (ideal para HTML->PDF)
 async function loadLogoDataUri(): Promise<string | null> {
   try {
-    // pon tu archivo en: /assets/reparte-logo.png
     const asset = Asset.fromModule(require('assets/images/logo.png'));
     await asset.downloadAsync(); // asegura localUri
     const fileUri = asset.localUri || asset.uri;
@@ -226,7 +225,6 @@ export default function DetalleGastoScreen() {
       </tr>
     `).join('');
 
-    // si hay logoDataUri lo mostramos, si no ponemos el emoji
     const logoHtml = logoDataUri
       ? `<img src="${logoDataUri}" style="width:44px;height:44px;border-radius:12px;object-fit:cover" />`
       : `<div class="logo">🧾</div>`;
@@ -453,19 +451,7 @@ export default function DetalleGastoScreen() {
 
       {/* Botones */}
       <View style={s.buttonGroup}>
-        <Pressable
-          onPress={() => {}}
-          style={({ pressed }) => [s.secondaryBtn, pressed && s.secondaryBtnPressed]}
-          android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        >
-          <View style={s.btnContent}>
-            <View style={s.btnIconCircle}>
-              <MaterialCommunityIcons name="chart-donut" size={18} color={PRIMARY} />
-            </View>
-            <Text style={s.secondaryBtnText}>Ver gráfico</Text>
-          </View>
-        </Pressable>
-
+        
         <Pressable
           onPress={onExportPdf}
           disabled={disableExport}

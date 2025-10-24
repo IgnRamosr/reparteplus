@@ -168,7 +168,7 @@ export default function RegistrarGasto() {
   const { grupo } = useLocalSearchParams<{ grupo?: string | string[] }>();
   const groupIdParam = Array.isArray(grupo) ? grupo[0] : grupo ?? '';
 
-  // ===== Back a /DetalleGrupo con refresh =====
+  // ===== Back a /DetalleGrupo con refresco =====
   const goBackToGroup = useCallback(() => {
     const gid = String(groupIdParam || selectedGrupoId || '');
     if (gid) {
@@ -222,6 +222,17 @@ export default function RegistrarGasto() {
   // Validación de boleta
   const [isReceiptValid, setIsReceiptValid] = useState<boolean>(false);
   const [receiptWarning, setReceiptWarning] = useState<string>('');
+
+  // ====== Fecha (nuevo estado editable) ======
+  const [fechaFocused, setFechaFocused] = useState(false);
+  const [fechaValor, setFechaValor] = useState(''); // aaaa-mm-dd editable
+
+  // Cuando la IA detecta fecha, se sincroniza el input (normalizado a aaaa-mm-dd)
+  useEffect(() => {
+    if (scanResult?.date && typeof scanResult.date === 'string') {
+      setFechaValor(scanResult.date.slice(0, 10));
+    }
+  }, [scanResult]);
 
   const takePhoto = useCallback(async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -337,6 +348,7 @@ export default function RegistrarGasto() {
       if (montoAuto) setMonto(montoAuto);
 
       if (parsed?.vendor) setConcepto(String(parsed.vendor));
+      if (parsed?.date) setFechaValor(String(parsed.date).slice(0, 10));
     } catch (err: any) {
       console.error(err);
       Alert.alert('Error', err?.message || 'Error procesando la imagen.');
@@ -416,6 +428,12 @@ export default function RegistrarGasto() {
     if (!pagadorId) { Alert.alert('Revisa el formulario', 'Selecciona el pagador.'); return; }
     if (!descripcion || !montoStr) { Alert.alert('Revisa el formulario', '¡Completa los campos vacíos!'); return; }
 
+    // Validación simple de fecha (opcional)
+    if (fechaValor && !/^\d{4}-\d{2}-\d{2}$/.test(fechaValor)) {
+      Alert.alert('Fecha inválida', 'Usa el formato aaaa-mm-dd, por ejemplo 2025-10-06.');
+      return;
+    }
+
     // Si se usó imagen, exigir validación de boleta
     if (imageUri && !isReceiptValid) {
       Alert.alert('No se puede registrar', 'La imagen no fue reconocida como boleta/factura válida. Por favor verifica.');
@@ -423,6 +441,10 @@ export default function RegistrarGasto() {
     }
 
     const participante_id = (participanteId ?? '1').toString();
+    const fechaEnviar =
+      (fechaValor && /^\d{4}-\d{2}-\d{2}$/.test(fechaValor))
+        ? fechaValor
+        : new Date().toISOString().slice(0, 10);
 
     const payload = {
       grupo_id: String(grupoFinal),
@@ -431,7 +453,7 @@ export default function RegistrarGasto() {
       descripciongasto: descripcion,
       moneda: 'CLP',
       monto: montoStr,
-      fecha_registro: new Date().toISOString().slice(0, 10),
+      fecha_registro: fechaEnviar,
     };
 
     try {
@@ -458,7 +480,7 @@ export default function RegistrarGasto() {
       const msg = e?.response?.data?.message || e?.message || 'Error enviando el gasto.';
       Alert.alert('Error', msg);
     } finally { setSubmitting(false); }
-  }, [groupIdParam, selectedGrupoId, monto, concepto, pagadorId, participanteId, submitting, participantes, imageUri, isReceiptValid]);
+  }, [groupIdParam, selectedGrupoId, monto, concepto, pagadorId, participanteId, submitting, participantes, imageUri, isReceiptValid, fechaValor]);
 
   // ====== UI ======
   const disableRegister = submitting || (imageUri && !isReceiptValid);
@@ -497,6 +519,33 @@ export default function RegistrarGasto() {
         {/* Gasto */}
         <Text style={s.label}>Gasto</Text>
         <TextInput value={concepto} onChangeText={setConcepto} placeholder="Ej. Almuerzo" placeholderTextColor="#9AA3AF" style={s.input} />
+
+        {/* Fecha */}
+        <Text style={s.label}>Fecha</Text>
+        <View style={[s.select, { position: 'relative' }]}>
+          {!fechaFocused && (
+            <Text style={[s.selectText, { position: 'absolute', top: 12, left: 12, color: '#0F172A' }]}>
+              {fechaValor}
+            </Text>
+          )}
+
+          <TextInput
+            style={[s.selectText, { paddingLeft: 12, color: '#0F172A', opacity: fechaFocused ? 1 : 0 }]}
+            value={fechaValor}
+            onChangeText={setFechaValor}
+            placeholder="Ingrese fecha (aaaa-mm-dd)"
+            placeholderTextColor="#94A3B8"
+            keyboardType="numbers-and-punctuation"
+            onFocus={() => {
+              setFechaFocused(true);
+              if (!fechaValor) {
+                const hoy = new Date().toISOString().slice(0, 10);
+                setFechaValor(hoy);
+              }
+            }}
+            onBlur={() => setFechaFocused(false)}
+          />
+        </View>
 
         {/* Moneda */}
         <Text style={s.label}>Moneda</Text>
@@ -546,10 +595,11 @@ export default function RegistrarGasto() {
             <Text style={{ color: INK }}>Vendedor: {scanResult.vendor ?? '—'}</Text>
             <Text style={{ color: INK }}>Total: {scanResult.total ?? '—'}</Text>
             <Text style={{ color: INK }}>Moneda: {scanResult.currency ?? 'CLP'}</Text>
+            <Text style={{ color: INK }}>Fecha: {scanResult.date ?? '—'}</Text>
           </View>
         ) : null}
 
-       {/* Botón Registrar */}
+        {/* Botón Registrar */}
         <Pressable
           onPress={onSubmit}
           disabled={!!disableRegister}
@@ -567,7 +617,7 @@ export default function RegistrarGasto() {
       </ScrollView>
     </KeyboardAvoidingView>
   );
-} 
+}
 
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG, padding: 20, paddingTop: 40 },

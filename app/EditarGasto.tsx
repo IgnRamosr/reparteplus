@@ -1,5 +1,5 @@
 // app/EditarGasto.tsx
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
 Alert,
 DeviceEventEmitter,
@@ -10,9 +10,11 @@ StyleSheet,
 Text,
 TextInput,
 View,
+ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import axios from 'axios';
 
 // ===== LedgerTeal palette =====
 const PRIMARY = '#0EA5A4'; // teal
@@ -22,55 +24,139 @@ const TEXT_MUTED = '#64748B';
 const BORDER = '#E2E8F0';
 const CARD = '#FFFFFF';
 
+// ==== API cliente local ====
+const apiGasto = axios.create({
+baseURL: 'https://amzcxtvh06.execute-api.us-east-1.amazonaws.com/production',
+timeout: 20000,
+headers: { 'Content-Type': 'application/json' },
+validateStatus: () => true,
+});
+
 export default function EditarGasto() {
-const { grupo, gasto } = useLocalSearchParams<{ grupo?: string | string[]; gasto?: string | string[] }>();
+const { grupo, gasto, nombreGrupo } =
+    useLocalSearchParams<{ nombreGrupo?: string | string[];grupo?: string | string[]; gasto?: string | string[] }>();
 const groupId = Array.isArray(grupo) ? grupo[0] : grupo ?? '';
 const gastoId = Array.isArray(gasto) ? gasto[0] : gasto ?? '';
+const nombreGrup = Array.isArray(nombreGrupo) ? nombreGrupo[0] : nombreGrupo ?? '';
 
-  // mocks
-const pagadores = useMemo(() => ['Luis Gonzalez', 'Ignacio Ramos', 'Sebastián Tapia'], []);
-const monedas   = useMemo(() => ['CLP', 'USD', 'EUR'], []);
+  // Estados — solo editables: concepto, moneda, monto
+  const [pagador, setPagador] = useState('');      // display (bloqueado)
+  const [concepto, setConcepto] = useState('');    // editable -> descripciongasto
+  const [moneda, setMoneda] = useState('CLP');     // editable (input simple, bloqueado)
+  const [monto, setMonto] = useState('');          // editable (string)
 
-const [pagador, setPagador] = useState(pagadores[0]);
-const [concepto, setConcepto] = useState('Bencina');
-const [moneda, setMoneda] = useState(monedas[0]);
-const [monto, setMonto] = useState('60000');
+const [cargando, setCargando] = useState<boolean>(false);
+const [submitting, setSubmitting] = useState<boolean>(false);
 
-useEffect(() => {
-    // TODO: fetch by gastoId y setear estado
-}, [gastoId]);
-
-const onPickPhoto = () => {
-    Alert.alert('En construcción', 'Adjuntar foto/boleta se habilitará más adelante.');
+  // --- Helpers ---
+const toNumberString = (raw: string) => {
+    // permite dígitos y punto, elimina resto
+    const cleaned = String(raw ?? '').replace(/[^\d.]/g, '');
+    return cleaned;
 };
 
-const onSubmit = () => {
-    const valor = Number(String(monto).replace(/[^\d.-]/g, ''));
-    if (!concepto.trim() || !pagador.trim() || !valor) {
-    Alert.alert('Revisa el formulario', 'Completa pagador, gasto y un monto válido.');
+const precargarGasto = useCallback(async () => {
+    if (!groupId || !gastoId) return;
+    try {
+    setCargando(true);
+      // No tenemos endpoint /gasto GET individual, así que listamos por grupo y filtramos
+    const resp = await apiGasto.get('/gastos', { params: { grupoId: String(groupId) } });
+    if (resp.status >= 200 && resp.status < 300) {
+        const arr: any[] = resp.data?.resultados ?? resp.data?.gastos ?? [];
+        const fila = arr.find(
+        (r: any) => String(r.id ?? r.gasto_id) === String(gastoId)
+        );
+        if (!fila) {
+        Alert.alert('Atención', 'No se encontró el gasto solicitado.');
+        return;
+        }
+
+        // Normaliza campos
+        const _concepto = String(fila.concepto ?? fila.descripciongasto ?? '');
+        const _moneda   = String(fila.moneda ?? 'CLP');
+        const _monto    = String(fila.monto ?? '');
+        const _pagador  = String(fila.pagador ?? fila.pagador_nombre ?? '—');
+
+        setConcepto(_concepto);
+        setMoneda(_moneda);
+        setMonto(_monto);
+        setPagador(_pagador);
+    } else {
+        Alert.alert('Error', `No se pudo cargar el gasto. Código: ${resp.status}`);
+    }
+    } catch (e: any) {
+    Alert.alert('Error', e?.message || 'No se pudo cargar el gasto.');
+    } finally {
+    setCargando(false);
+    }
+}, [groupId, gastoId]);
+
+useEffect(() => {
+    precargarGasto();
+}, [precargarGasto]);
+
+const onSubmit = async () => {
+    // Validaciones
+    const valorStr = toNumberString(monto);
+    const valorNum = Number(valorStr);
+    if (!concepto.trim()) {
+    Alert.alert('Revisa el formulario', 'Ingresa un nombre de gasto.');
+    return;
+    }
+    if (!pagador.trim()) {
+    Alert.alert('Revisa el formulario', 'Falta el pagador.');
+    return;
+    }
+    if (!valorStr || !isFinite(valorNum) || valorNum <= 0) {
+    Alert.alert('Revisa el formulario', 'Ingresa un monto válido (> 0).');
+    return;
+    }
+    if (!moneda.trim()) {
+    Alert.alert('Revisa el formulario', 'Ingresa una moneda (ej: CLP, USD, EUR).');
     return;
     }
 
-    DeviceEventEmitter.emit('gasto:actualizado', {
-    id: gastoId,
-    concepto: concepto.trim(),
-    pagador: pagador.trim(),
-    pagado: false,
-    monto: valor,
-    moneda,
-    grupo: groupId,
+    try {
+    setSubmitting(true);
+
+      // PATCH /gasto con body requerido
+    const resp = await apiGasto.patch('/gasto', {
+        gastoId: Number(gastoId),
+        updates: {
+        descripciongasto: concepto.trim(),
+        moneda: moneda.trim(),
+          monto: valorStr, // el backend espera string 
+        },
     });
 
-    router.back();
-};
+    if (resp.status >= 200 && resp.status < 300) {
+        DeviceEventEmitter.emit('gasto:actualizado', {
+        id: gastoId,
+        concepto: concepto.trim(),
+        pagador: pagador.trim(),
+        pagado: false,
+        monto: valorStr,
+        moneda: moneda.trim(),
+        grupo: groupId,
+        });
 
-const cycle = (arr: string[], value: string, setter: (v: string) => void) => {
-    const i = arr.indexOf(value);
-    setter(arr[(i + 1) % arr.length]);
+        Alert.alert('Éxito', 'Gasto actualizado correctamente.');
+        router.back();
+    } else {
+        Alert.alert('Error', `No se pudo actualizar. Código: ${resp.status}`);
+    }
+    } catch (e: any) {
+    Alert.alert('Error', e?.message || 'No se pudo conectar con el servidor.');
+    } finally {
+    setSubmitting(false);
+    }
 };
 
 return (
-    <KeyboardAvoidingView style={s.container} behavior={Platform.select({ ios: 'padding', android: undefined })}>
+    <KeyboardAvoidingView
+    style={s.container}
+    behavior={Platform.select({ ios: 'padding', android: undefined })}
+    >
       {/* Header */}
     <View style={s.header}>
         <Pressable
@@ -88,25 +174,23 @@ return (
         <View style={{ width: 36 }} />
     </View>
 
-      {/* Grupo (solo display rápido) */}
+      {/* Grupo (solo display) */}
     <Text style={s.label}>Grupo</Text>
-    <Pressable style={s.select} disabled>
-        <Text style={s.selectText}>Viaje de negocios</Text>
-        <MaterialCommunityIcons name="chevron-down" size={18} color={INK} />
-    </Pressable>
+    <View style={[s.select, { opacity: 0.7 }]}>
+        <Text style={s.selectText}>{nombreGrup || '—'}</Text>
+        <MaterialCommunityIcons name="lock" size={16} color={INK} />
+    </View>
 
-      {/* Pagador */}
+      {/* Pagador (bloqueado) */}
     <Text style={s.label}>Pagador</Text>
-    <Pressable
-        onPress={() => cycle(pagadores, pagador, setPagador)}
-        style={({ pressed }) => [s.select, pressed && s.selectPressed]}
-        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-    >
-        <Text style={s.selectText}>{pagador}</Text>
-        <MaterialCommunityIcons name="chevron-down" size={18} color={INK} />
-    </Pressable>
+    <TextInput
+        value={pagador}
+        editable={false}
+        selectTextOnFocus={false}
+        style={[s.input, { opacity: 0.7 }]}
+    />
 
-      {/* Gasto */}
+      {/* Gasto (editable) */}
     <Text style={s.label}>Gasto</Text>
     <TextInput
         value={concepto}
@@ -116,45 +200,45 @@ return (
         style={s.input}
     />
 
-      {/* Moneda */}
+      {/* Moneda (editable, sin dropdown) */}
     <Text style={s.label}>Moneda</Text>
-    <Pressable
-        onPress={() => cycle(monedas, moneda, setMoneda)}
-        style={({ pressed }) => [s.select, pressed && s.selectPressed]}
-        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-    >
-        <Text style={s.selectText}>{moneda}</Text>
-        <MaterialCommunityIcons name="chevron-down" size={18} color={INK} />
-    </Pressable>
+    <TextInput
+        value={moneda}
+        onChangeText={setMoneda}
+        placeholder="Ej. CLP"
+        editable={false}
+        placeholderTextColor="#9AA3AF"
+        autoCapitalize="characters"
+        style={s.input}
+    />
 
-      {/* Total + cámara */}
+      {/* Total de gasto (editable) */}
     <Text style={s.label}>Total de gasto</Text>
-    <View style={s.amountRow}>
-        <TextInput
+    <TextInput
         value={monto}
-        onChangeText={setMonto}
+        onChangeText={(t) => setMonto(toNumberString(t))}
         placeholder="0"
         placeholderTextColor="#9AA3AF"
-        style={[s.input, { flex: 1, marginBottom: 0 }]}
+        style={[s.input, { marginBottom: 12 }]}
         keyboardType="numeric"
-        />
-        <Pressable
-        onPress={onPickPhoto}
-        style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]}
-        hitSlop={8}
-        android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
-        >
-        <MaterialCommunityIcons name="camera-outline" size={18} color={INK} />
-        </Pressable>
-    </View>
+    />
 
-      {/* Botón Editar (primario teal) */}
+      {/* Botón Editar */}
     <Pressable
         onPress={onSubmit}
-        style={({ pressed }) => [s.primaryBtn, pressed && s.primaryBtnPressed]}
+        disabled={submitting || cargando}
+        style={({ pressed }) => [
+        s.primaryBtn,
+        pressed && s.primaryBtnPressed,
+        (submitting || cargando) && { opacity: 0.6 },
+        ]}
         android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
     >
+        {submitting ? (
+        <ActivityIndicator color="#fff" />
+        ) : (
         <Text style={s.primaryText}>Editar</Text>
+        )}
     </Pressable>
     </KeyboardAvoidingView>
 );
@@ -179,7 +263,6 @@ input: {
     fontSize: 15,
     color: INK,
     marginBottom: 10,
-    // sombra suave
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 6,
@@ -204,27 +287,7 @@ select: {
     shadowOffset: { width: 0, height: 2 },
     elevation: 1,
 },
-selectPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.985 }] },
 selectText: { fontSize: 15, color: INK },
-
-amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
-
-camBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: CARD,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-},
-camBtnPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.97 }] },
 
 iconBtn: { padding: 8, borderRadius: 12 },
 iconPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.97 }] },

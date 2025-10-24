@@ -197,7 +197,7 @@ btnPrimary: {
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
 },
-  // 👇 highlight del botón
+  // highlight del botón
 btnPrimaryPressed: {
     backgroundColor: '#14B8A6',
     transform: [{ scale: 0.98 }],

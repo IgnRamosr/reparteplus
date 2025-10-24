@@ -13,8 +13,8 @@ export default function ForgotPasswordScreen() {
   const [busy, setBusy] = useState(false);
 
   // ======= SOLO ESTILOS: LedgerTeal =======
-  const PRIMARY = '#0EA5A4'; // teal
-  const BG = '#F8FBFC';      // casi blanco azulado
+  const PRIMARY = '#0EA5A4'; 
+  const BG = '#F8FBFC';      
   const TEXT_MUTED = '#64748B';
   const BORDER = '#E2E8F0';
 

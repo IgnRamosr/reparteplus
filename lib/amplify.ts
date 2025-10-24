@@ -21,7 +21,6 @@ Amplify.configure({
       loginWith: { email: true, username: false, phone: false },
     },
 
-    // agrega oauth SOLO si están las tres vars; siempre expandimos un objeto
     ...(domain && redirectSignIn && redirectSignOut
       ? {
           oauth: {

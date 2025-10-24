@@ -8,7 +8,7 @@ export default function RootLayout() {
         headerShown: false, // ocultamos header por defecto; ajusta por pantalla si quieres
       }}
     >
-      {/* Si quieres personalizar headers por ruta, descomenta y ajusta:
+      {/* para personalizar headers por ruta, descomentar y ajustar:
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="grupos/index" options={{ headerShown: false }} />
       */}
