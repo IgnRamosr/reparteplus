@@ -331,7 +331,7 @@ export default function DetalleGrupo() {
                   <MaterialCommunityIcons name="trash-can-outline" size={22} color="#fff" />
                 </Pressable>
 
-                <Pressable disabled={true} onPress={verGrafico} style={({ pressed }) => [styles.iconTopBtn, pressed && styles.iconTopBtnPressed]} hitSlop={10}>
+                <Pressable onPress={verGrafico} style={({ pressed }) => [styles.iconTopBtn, pressed && styles.iconTopBtnPressed]} hitSlop={10}>
                   <MaterialCommunityIcons name="chart-line" size={22} color="#fff" />
                 </Pressable>
               </View>
