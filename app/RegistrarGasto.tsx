@@ -234,6 +234,36 @@ export default function RegistrarGasto() {
     }
   }, [scanResult]);
 
+  // ======= NUEVO: elegir imagen desde la galería =======
+  const pickFromGallery = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permisos', 'Se requiere permiso para acceder a tus fotos.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      allowsEditing: false,
+      quality: 1,
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      selectionLimit: 1,
+    });
+    if (!result.canceled) {
+      const asset = result.assets[0];
+      setImageUri(asset.uri);
+      const mime = asset.mimeType ?? null;
+      const ext =
+        asset.fileName?.split('.').pop()?.toLowerCase() ||
+        mime?.split('/').pop()?.toLowerCase() ||
+        (asset.uri.toLowerCase().endsWith('.png') ? 'png' : 'jpg');
+      setPickedMime(mime);
+      setPickedExt(ext);
+      setScanResult(null);
+      setIsReceiptValid(false);
+      setReceiptWarning('');
+    }
+  }, []);
+  // ================================================
+
   const takePhoto = useCallback(async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
     if (!permission.granted) { Alert.alert('Permisos', 'Se requiere permiso para usar la cámara.'); return; }
@@ -241,7 +271,7 @@ export default function RegistrarGasto() {
     if (!result.canceled) {
       const asset = result.assets[0];
       setImageUri(asset.uri);
-      const mime = asset.mimeType ?? null; // image/heic, image/png, image/jpeg
+      const mime = asset.mimeType ?? null;
       const ext =
         asset.fileName?.split('.').pop()?.toLowerCase() ||
         mime?.split('/').pop()?.toLowerCase() ||
@@ -254,8 +284,19 @@ export default function RegistrarGasto() {
     }
   }, []);
 
+  // ======= NUEVO: eliminar imagen (reset adjunto y escaneo) =======
+  const removeImage = useCallback(() => {
+    setImageUri(null);
+    setPickedMime(null);
+    setPickedExt(null);
+    setScanResult(null);
+    setIsReceiptValid(false);
+    setReceiptWarning('');
+  }, []);
+  // ================================================================
+
   const uploadAndProcess = useCallback(async () => {
-    if (!imageUri) { Alert.alert('Falta la foto', 'Primero toma una foto de la boleta.'); return; }
+    if (!imageUri) { Alert.alert('Falta la foto', 'Primero toma una foto o elige una imagen de la galería.'); return; }
 
     try {
       setScanLoading(true);
@@ -554,7 +595,7 @@ export default function RegistrarGasto() {
           <MaterialCommunityIcons name="lock-outline" size={18} color={INK} />
         </View>
 
-        {/* Total + cámara */}
+        {/* Total + cámara/galería */}
         <Text style={s.label}>Total de gasto</Text>
         <View style={s.amountRow}>
           <TextInput
@@ -569,14 +610,21 @@ export default function RegistrarGasto() {
           <Pressable onPress={takePhoto} style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]} hitSlop={8} android_ripple={{ color: 'rgba(14,165,164,0.08)' }}>
             <MaterialCommunityIcons name="camera-outline" size={18} color={INK} />
           </Pressable>
+          <Pressable onPress={pickFromGallery} style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]} hitSlop={8} android_ripple={{ color: 'rgba(14,165,164,0.08)' }}>
+            <MaterialCommunityIcons name="image-outline" size={18} color={INK} />
+          </Pressable>
         </View>
 
-        {/* Preview + botón procesar */}
+        {/* Preview + botones procesar/eliminar */}
         {imageUri ? (
           <View style={{ gap: 10, marginBottom: 8 }}>
             <Image source={{ uri: imageUri }} style={{ width: '100%', height: 220, borderRadius: 12, backgroundColor: '#eee' }} resizeMode="cover" />
             <Pressable onPress={uploadAndProcess} disabled={scanLoading} style={({ pressed }) => [s.secondaryBtn, pressed && s.secondaryBtnPressed, scanLoading && { opacity: 0.6 }]} android_ripple={{ color: 'rgba(14,165,164,0.08)' }}>
               {scanLoading ? <ActivityIndicator color={PRIMARY} /> : <Text style={s.secondaryText}>Subir y procesar boleta</Text>}
+            </Pressable>
+
+            <Pressable onPress={removeImage} disabled={scanLoading} style={({ pressed }) => [s.dangerBtn, pressed && s.dangerBtnPressed, scanLoading && { opacity: 0.6 }]} android_ripple={{ color: 'rgba(185,28,28,0.08)' }}>
+              <Text style={s.dangerText}>Eliminar imagen</Text>
             </Pressable>
 
             {!!receiptWarning && (
@@ -664,10 +712,22 @@ const s = StyleSheet.create({
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
   secondaryBtn: {
     backgroundColor: CARD, borderRadius: 12, paddingVertical: 12, alignItems: 'center',
-    borderWidth: 1, borderColor: BORDER, marginBottom: 12
+    borderWidth: 1, borderColor: BORDER, marginBottom: 8
   },
   secondaryBtnPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.985 }] },
   secondaryText: { color: INK, fontSize: 15, fontWeight: '700' },
+  // NUEVO: botón eliminar imagen (estilo peligro suave)
+  dangerBtn: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FCA5A5', // rojo claro
+    marginBottom: 12,
+  },
+  dangerBtnPressed: { backgroundColor: '#FEF2F2', transform: [{ scale: 0.985 }] },
+  dangerText: { color: DANGER, fontSize: 15, fontWeight: '700' },
   scanCard: {
     backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, borderRadius: 14,
     padding: 12, marginTop: 6, marginBottom: 4,

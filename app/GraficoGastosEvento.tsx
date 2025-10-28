@@ -1,61 +1,63 @@
 // app/GraficoGastosEvento.tsx
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
   Dimensions,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
+  Animated,
+  Easing,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { BarChart, PieChart } from "react-native-chart-kit";
+import { useFocusEffect } from "@react-navigation/native";
+import { LinearGradient } from "expo-linear-gradient";
 
-/* ==================  LedgerTeal  ================== */
+/* ======= PALETA LedgerTeal ======= */
 const PRIMARY = "#0EA5A4";
+const PRIMARY_DARK = "#0A8E8C";
 const SECONDARY = "#14B8A6";
 const BG = "#F8FBFC";
 const CARD = "#FFFFFF";
 const INK = "#0F172A";
-const TEXT = "#1F2937";
 const TEXT_MUTED = "#6B7280";
 const BORDER = "#E5E7EB";
 
-/* ====== Responsive helpers ====== */
+/* ======= Layout ======= */
 const { width: SCREEN_W } = Dimensions.get("window");
 const S = Math.min(Math.max(SCREEN_W / 390, 0.85), 1.05);
-
 const chartWidth = Math.min(SCREEN_W - 24, 560);
 const chartHeight = Math.round(200 * S);
 
-/* ==================  API  ================== */
+/* ======= API ======= */
 const apiGrupo = axios.create({
   baseURL: "https://ee61hfpl8e.execute-api.us-east-1.amazonaws.com/production",
   timeout: 20000,
-  headers: { "Content-Type": "application/json" },
-  validateStatus: () => true,
+  headers: { "Cache-Control": "no-cache" },
 });
 const apiGasto = axios.create({
   baseURL: "https://amzcxtvh06.execute-api.us-east-1.amazonaws.com/production",
   timeout: 20000,
-  headers: { "Content-Type": "application/json" },
-  validateStatus: () => true,
+  headers: { "Cache-Control": "no-cache" },
 });
 
-/* ==================  Tipos  ================== */
+/* ======= Tipos ======= */
 type Grupo = {
   id: string;
   nombre: string;
-  descripcion?: string;
   fecha_inicio?: string;
   fecha_cierre?: string;
-  creador_id?: number;
   creador_nombre?: string;
+  descripcion?: string;
 };
 type Participante = { participante_id: number; nombre?: string; email?: string };
 type Gasto = {
@@ -63,13 +65,62 @@ type Gasto = {
   descripcion: string;
   monto: number;
   moneda: string;
-  fecha?: string; // ISO
+  fecha?: string;
   estado: boolean;
-  participante_id?: number;
   pagador_nombre?: string;
 };
 
-/* ==================  Pantalla  ================== */
+/* ======= Helpers ======= */
+const fmtDate = (iso?: string) => {
+  if (!iso) return "—";
+  const d = new Date(iso.length === 10 ? iso + "T00:00:00" : iso);
+  return isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString("es-CL");
+};
+const money = (n?: number, cur = "CLP") =>
+  `${Intl.NumberFormat("es-CL").format(Math.round(Number(n || 0)))} ${cur}`;
+const fmtMiles = (n: number) => Intl.NumberFormat("es-CL").format(Math.round(n));
+const parseEstado = (v: any): boolean => {
+  if (typeof v === "boolean") return v;
+  if (typeof v === "number") return v === 1;
+  const s = String(v ?? "").trim().toLowerCase();
+  if (["true", "t", "1", "pagado", "paid", "liquidado"].includes(s)) return true;
+  if (["false", "f", "0", "pendiente", "unpaid", "no pagado"].includes(s)) return false;
+  return false;
+};
+
+/* ✅ Helper robusto para tomar la descripción sin importar el nombre del campo */
+function pickDescripcion(row: any): string {
+  if (!row || typeof row !== "object") return "Sin descripción";
+  const keys = Object.keys(row);
+  const candidates = [
+    "descripciongasto",
+    "descripcion_gasto",
+    "descripcion",
+    "desc",
+    "nombre_gasto",
+    "nombre",
+    "titulo",
+    "detalle",
+    "concepto",
+    "observacion",
+    "item",
+  ];
+  const norm = (s: string) => s.toLowerCase().replace(/_/g, "");
+  const map = new Map(keys.map((k) => [norm(k), k]));
+  for (const c of candidates) {
+    const hit = map.get(norm(c));
+    if (hit && row[hit] != null && String(row[hit]).trim() !== "") {
+      return String(row[hit]).trim();
+    }
+  }
+  const fuzzy = keys.find((k) => /(desc|concept|titulo|detalle|nombre)/i.test(k));
+  if (fuzzy && row[fuzzy] != null && String(row[fuzzy]).trim() !== "") {
+    return String(row[fuzzy]).trim();
+  }
+  return "Sin descripción";
+}
+
+/* ======= COMPONENTE PRINCIPAL ======= */
 export default function GraficoGastosEvento() {
   const { id, nombre } = useLocalSearchParams<{ id: string; nombre?: string }>();
 
@@ -77,481 +128,328 @@ export default function GraficoGastosEvento() {
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [participantes, setParticipantes] = useState<Participante[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Controles del dashboard
+  const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
-  const [range, setRange] = useState<"all" | "7d" | "30d">("all");
   const [estado, setEstado] = useState<"all" | "pagado" | "pendiente">("all");
-  const [sortBy, setSortBy] = useState<"fecha" | "monto">("fecha");
-  const [sortDir, setSortDir] = useState<"desc" | "asc">("desc");
-  const [groupBy, setGroupBy] = useState<"none" | "pagador" | "fecha">("none");
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
-  /* ====== helpers formato ====== */
-  const fmtDate = (iso?: string) => {
-    if (!iso) return "—";
-    const d = iso.length === 10 ? new Date(iso + "T00:00:00") : new Date(iso);
-    return isNaN(d.getTime()) ? String(iso) : d.toLocaleDateString("es-CL");
-  };
-  const money = (n?: number) =>
-    `${Intl.NumberFormat("es-CL").format(Math.round(Number(n || 0)))} CLP`;
+  /* ======= Animaciones ======= */
+  const saldosOpacity = useRef(new Animated.Value(0)).current;
+  const resumenOpacity = useRef(new Animated.Value(0)).current;
+  const runFade = useCallback(() => {
+    const anim = (v: Animated.Value) =>
+      Animated.timing(v, {
+        toValue: 1,
+        duration: 320,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      });
+    saldosOpacity.setValue(0);
+    resumenOpacity.setValue(0);
+    Animated.stagger(120, [anim(resumenOpacity), anim(saldosOpacity)]).start();
+  }, [saldosOpacity, resumenOpacity]);
 
-  /* ====== fetch participante por id ====== */
-  const fetchParticipanteById = useCallback(async (pid: number) => {
-    const intents = [
-      () => apiGrupo.get("/participante", { params: { participanteId: pid } }),
-      () => apiGrupo.get(`/participantes/${pid}`),
-    ];
-    for (const req of intents) {
-      try {
-        const r = await req();
-        if (r.status >= 200 && r.status < 300 && r.data) {
-          const p = r.data?.data ?? r.data?.participante ?? r.data;
-          if (Array.isArray(p) && p.length > 0) return p[0];
-          return p;
-        }
-      } catch {}
-    }
-    return null;
-  }, []);
-
-  /* ====== participantes por grupo ====== */
-  const fetchParticipantes = useCallback(
-    async (grupoId: string) => {
-      const idIntents = [
-        () => apiGrupo.get("/grupo_participante", { params: { grupoId } }),
-        () => apiGrupo.get("/grupo-participante", { params: { grupoId } }),
-        () => apiGrupo.get(`/grupos/${grupoId}/participantes-ids`),
-      ];
-      let ids: number[] = [];
-      for (const call of idIntents) {
-        try {
-          const r = await call();
-          if (r.status >= 200 && r.status < 300 && r.data) {
-            const rows: any[] = r.data?.data ?? r.data?.rows ?? r.data?.resultados ?? r.data;
-            if (Array.isArray(rows) && rows.length > 0) {
-              ids = rows
-                .map((row) => Number(row.participante_id ?? row.id ?? row.user_id))
-                .filter((n) => Number.isFinite(n));
-              break;
-            }
-          }
-        } catch {}
-      }
-
-      if (ids.length === 0) {
-        const fallbackIntents = [
-          () => apiGrupo.get("/grupo/participantes", { params: { grupoId } }),
-          () => apiGrupo.get("/participantes", { params: { grupoId } }),
-          () => apiGrupo.get(`/grupos/${grupoId}/participantes`),
-        ];
-        for (const call of fallbackIntents) {
-          try {
-            const r = await call();
-            if (r.status >= 200 && r.status < 300 && r.data) {
-              const arr: any[] =
-                r.data?.data ?? r.data?.participantes ?? r.data?.resultados ?? r.data;
-              if (Array.isArray(arr)) {
-                return arr.map((p: any) => ({
-                  participante_id: Number(p.participante_id ?? p.id ?? p.user_id ?? 0),
-                  nombre: p.nombre ?? undefined,
-                  email: p.email ?? undefined,
-                })) as Participante[];
-              }
-            }
-          } catch {}
-        }
-        return [] as Participante[];
-      }
-
-      const results = await Promise.all(
-        ids.map(async (pid) => {
-          const p = await fetchParticipanteById(pid);
-          return { participante_id: pid, nombre: p?.nombre, email: p?.email } as Participante;
-        })
-      );
-
-      const unique = new Map<number, Participante>();
-      results.forEach((p) => unique.set(p.participante_id, p));
-      return Array.from(unique.values());
-    },
-    [fetchParticipanteById]
-  );
-
-  /* ====== carga principal ====== */
+  /* ======= FETCH DATA ======= */
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
+      const _t = Date.now();
 
-      // 1) Grupo
-      const gRes = await apiGrupo.get("/grupo", { params: { grupoId: String(id) } });
-      let creadorId: number | undefined;
-      if (gRes.status >= 200 && gRes.status < 300 && gRes.data) {
-        const g = gRes.data;
-        creadorId = Number(g.creado_por ?? g.creador ?? undefined);
-        const creadorInfo = creadorId ? await fetchParticipanteById(creadorId) : null;
+      // Grupo
+      const gRes = await apiGrupo.get("/grupo", { params: { grupoId: id, _t } });
+      const g = gRes.data || {};
+      setGrupo({
+        id: String(id),
+        nombre: g.nombre ?? nombre ?? "Evento",
+        fecha_inicio: g.fecha_inicio,
+        fecha_cierre: g.fecha_cierre,
+        creador_nombre: g.creador_nombre ?? "—",
+        descripcion: g.descripcion ?? "Salida",
+      });
 
-        setGrupo({
-          id: String(id),
-          nombre: g.nombre ?? (nombre as string) ?? "Evento",
-          descripcion: g.descripcion ?? "",
-          fecha_inicio: g.fecha_inicio ?? "",
-          fecha_cierre: g.fecha_cierre ?? "",
-          creador_id: creadorId,
-          creador_nombre: creadorInfo?.nombre ?? (creadorId ? `ID ${creadorId}` : "—"),
-        });
-      } else {
-        setGrupo({
-          id: String(id),
-          nombre: (nombre as string) ?? "Evento",
-          creador_nombre: "—",
-        });
-      }
-
-      // 2) Gastos
-      const gastosRes = await apiGasto.get("/gastos", { params: { grupoId: String(id) } });
-      let lista: Gasto[] = [];
-      if (gastosRes.status >= 200 && gastosRes.status < 300) {
-        const arr: any[] =
-          gastosRes.data?.resultados ?? gastosRes.data?.gastos ?? gastosRes.data ?? [];
-        lista = arr.map((r: any) => ({
-          id: String(r.gasto_id ?? r.id ?? r.gastoId ?? ""),
-          descripcion: String(r.descripciongasto ?? r.descripcion ?? r.concepto ?? "—"),
-          monto: Number(r.monto ?? 0),
-          moneda: String(r.moneda ?? "CLP"),
-          fecha: r.fecha_registro ?? r.fecha ?? undefined,
-          estado: typeof r.estado === "boolean" ? r.estado : Boolean(r.pagado ?? false),
-          participante_id: r.participante_id ? Number(r.participante_id) : undefined,
-          pagador_nombre: r.pagador_nombre ?? r.nombre_pagador ?? r.pagador ?? undefined,
-        }));
-      }
-      setGastos(lista);
-
-      // 3) Participantes del grupo o inferidos
-      let parts = await fetchParticipantes(String(id));
-      if ((!parts || parts.length === 0) && lista.length > 0) {
-        const idsFromGastos = Array.from(
-          new Set(
-            lista.map((g) => g.participante_id).filter((x): x is number => typeof x === "number")
-          )
+      // Participantes
+      try {
+        const pRes = await apiGrupo.get("/grupo/participantes", { params: { grupoId: id, _t } });
+        const parr: any[] = pRes?.data?.participantes ?? [];
+        setParticipantes(
+          parr.map((p: any, i: number) => ({
+            participante_id: Number(p.participante_id ?? i),
+            nombre: p.nombre ?? p.email ?? `Participante ${i + 1}`,
+            email: p.email,
+          }))
         );
-        parts = await Promise.all(
-          idsFromGastos.map(async (pid) => {
-            const p = await fetchParticipanteById(pid);
-            return { participante_id: pid, nombre: p?.nombre, email: p?.email } as Participante;
-          })
-        );
+      } catch {
+        setParticipantes([]);
       }
-      setParticipantes(parts);
-    } catch (e: any) {
-      console.error(e);
-      Alert.alert("Aviso", "No fue posible cargar todos los datos. Se mostrarán los disponibles.");
-      if (!grupo)
-        setGrupo({ id: String(id), nombre: (nombre as string) ?? "Evento", creador_nombre: "—" });
+
+      // Gastos
+      const gastosRes = await apiGasto.get("/gastos", { params: { grupoId: id, _t } });
+      const arr: any[] = gastosRes.data?.resultados ?? gastosRes.data ?? [];
+      setGastos(
+        arr.map((r: any, i: number) => ({
+          id: String(r.id ?? r.gasto_id ?? r.uuid ?? i),
+          descripcion: pickDescripcion(r),
+          monto: Number(r.monto ?? r.total ?? r.valor ?? r.precio ?? 0),
+          moneda: r.moneda ?? r.divisa ?? "CLP",
+          fecha: r.fecha ?? r.fecha_registro ?? r.created_at ?? undefined,
+          estado: parseEstado(r.estado ?? r.pagado ?? r.is_paid ?? r.estado_pago),
+          pagador_nombre:
+            r.pagador_nombre ??
+            r.nombre_pagador ??
+            r.pagador ??
+            r.participante_nombre ??
+            r.nombre_participante ??
+            r.autor ??
+            "—",
+        }))
+      );
+    } catch {
+      Alert.alert("Error", "No se pudieron cargar los datos.");
     } finally {
       setLoading(false);
+      setRefreshing(false);
+      runFade();
     }
-  }, [id, nombre, fetchParticipantes, fetchParticipanteById, grupo]);
+  }, [id, nombre, runFade]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  /* ====== helpers de nombres ====== */
-  const nombreParticipante = useCallback(
-    (pid?: number) => {
-      if (!pid) return "—";
-      const p = participantes.find((x) => x.participante_id === pid);
-      return p?.nombre || p?.email || `ID ${pid}`;
-    },
-    [participantes]
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
   );
 
-  /* ====== filtros/orden/agrupación ====== */
-  const parseISO = (iso?: string) => {
-    if (!iso) return null;
-    const d = iso.length === 10 ? new Date(iso + "T00:00:00") : new Date(iso);
-    return isNaN(d.getTime()) ? null : d;
-  };
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener("reparte:gasto:actualizado", fetchData);
+    return () => sub.remove();
+  }, [fetchData]);
 
-  const dateLimit = useMemo(() => {
-    if (range === "7d") {
-      const d = new Date();
-      d.setDate(d.getDate() - 7);
-      return d;
-    }
-    if (range === "30d") {
-      const d = new Date();
-      d.setDate(d.getDate() - 30);
-      return d;
-    }
-    return null;
-  }, [range]);
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchData();
+  }, [fetchData]);
 
+  /* ======= FILTROS ======= */
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return gastos
-      .filter((g) => {
-        if (estado === "pagado" && !g.estado) return false;
-        if (estado === "pendiente" && g.estado) return false;
-        if (dateLimit) {
-          const d = parseISO(g.fecha);
-          if (!d || d < dateLimit) return false;
-        }
-        if (q.length > 0) {
-          const pagador = g.pagador_nombre || nombreParticipante(g.participante_id) || "";
-          const hay =
-            g.descripcion.toLowerCase().includes(q) ||
-            pagador.toLowerCase().includes(q) ||
-            (g.moneda || "").toLowerCase().includes(q);
-          if (!hay) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => {
-        if (sortBy === "monto") {
-          return (a.monto - b.monto) * (sortDir === "asc" ? 1 : -1);
-        }
-        const da = parseISO(a.fecha)?.getTime() ?? 0;
-        const db = parseISO(b.fecha)?.getTime() ?? 0;
-        return (db - da) * (sortDir === "desc" ? 1 : -1);
-      });
-  }, [gastos, estado, dateLimit, search, sortBy, sortDir, nombreParticipante]);
+    return gastos.filter(
+      (g) =>
+        (estado === "all" ||
+          (estado === "pagado" && g.estado) ||
+          (estado === "pendiente" && !g.estado)) &&
+        (q === "" ||
+          g.descripcion.toLowerCase().includes(q) ||
+          (g.pagador_nombre || "").toLowerCase().includes(q))
+    );
+  }, [gastos, estado, search]);
 
-  const totalEvento = useMemo(
-    () => gastos.reduce((acc, g) => acc + (Number(g.monto) || 0), 0),
-    [gastos]
-  );
-  const totalFiltrado = useMemo(
-    () => filtered.reduce((acc, g) => acc + (Number(g.monto) || 0), 0),
-    [filtered]
-  );
+  const totalEvento = gastos.reduce((a, g) => a + g.monto, 0);
+  const totalFiltrado = filtered.reduce((a, g) => a + g.monto, 0);
 
-  // Agrupación para la lista
-  type ItemGroup = { key: string; title: string; total: number; items: Gasto[] };
-  const grouped: ItemGroup[] = useMemo(() => {
-    if (groupBy === "none")
-      return [{ key: "all", title: "Todos los gastos", total: totalFiltrado, items: filtered }];
-    const map = new Map<string, ItemGroup>();
-    if (groupBy === "pagador") {
-      filtered.forEach((g) => {
-        const name = g.pagador_nombre || nombreParticipante(g.participante_id) || "—";
-        const key = name;
-        if (!map.has(key)) map.set(key, { key, title: name, total: 0, items: [] });
-        const grp = map.get(key)!;
-        grp.items.push(g);
-        grp.total += Number(g.monto) || 0;
-      });
-    } else {
-      filtered.forEach((g) => {
-        const key = g.fecha ? fmtDate(g.fecha) : "Sin fecha";
-        if (!map.has(key)) map.set(key, { key, title: key, total: 0, items: [] });
-        const grp = map.get(key)!;
-        grp.items.push(g);
-        grp.total += Number(g.monto) || 0;
-      });
-    }
-    return Array.from(map.values()).sort((a, b) => b.total - a.total);
-  }, [filtered, groupBy, totalFiltrado, nombreParticipante]);
-
-  const toggleExpand = (k: string) => setExpanded((prev) => ({ ...prev, [k]: !prev[k] }));
-
-  /* ====== DATA PARA GRÁFICAS EN VIVO (según filtros) ====== */
+  /* ======= GRÁFICOS ======= */
   const topPagadores = useMemo(() => {
     const map = new Map<string, number>();
     filtered.forEach((g) => {
-      const name = g.pagador_nombre || nombreParticipante(g.participante_id) || "—";
-      map.set(name, (map.get(name) ?? 0) + (Number(g.monto) || 0));
+      const key = g.pagador_nombre || "—";
+      map.set(key, (map.get(key) ?? 0) + g.monto);
     });
-    const arr = Array.from(map.entries()).map(([nombre, monto]) => ({ nombre, monto }));
-    return arr.sort((a, b) => b.monto - a.monto).slice(0, 5);
-  }, [filtered, nombreParticipante]);
-
-  const barDataTopPagadores = useMemo(
-    () => ({
-      labels: topPagadores.map((x) =>
-        x.nombre.length > 12 ? x.nombre.slice(0, 12) + "…" : x.nombre
-      ),
-      datasets: [{ data: topPagadores.map((x) => Math.round(x.monto)) }],
-    }),
-    [topPagadores]
-  );
-
-  const totalsEstado = useMemo(() => {
-    let pagado = 0,
-      pendiente = 0;
-    filtered.forEach((g) => (g.estado ? (pagado += g.monto) : (pendiente += g.monto)));
-    return { pagado, pendiente };
+    return Array.from(map.entries())
+      .map(([nombre, monto]) => ({ nombre, monto }))
+      .sort((a, b) => b.monto - a.monto)
+      .slice(0, 5);
   }, [filtered]);
 
-  const pieDataEstado = useMemo(
-    () => [
-      {
-        name: "Pagado",
-        amount: Math.round(totalsEstado.pagado),
-        color: "#10B981",
-        legendFontColor: TEXT_MUTED,
-        legendFontSize: Math.round(11 * S),
-      },
-      {
-        name: "Pendiente",
-        amount: Math.round(totalsEstado.pendiente),
-        color: "#F59E0B",
-        legendFontColor: TEXT_MUTED,
-        legendFontSize: Math.round(11 * S),
-      },
-    ],
-    [totalsEstado]
-  );
+  const barData = {
+    labels: topPagadores.map((x) =>
+      x.nombre.length > 12 ? x.nombre.slice(0, 12) + "…" : x.nombre
+    ),
+    datasets: [{ data: topPagadores.map((x) => x.monto) }],
+  };
 
-  /* ==================  UI  ================== */
-  if (loading) {
+  const pagado = filtered.filter((x) => x.estado).reduce((a, g) => a + g.monto, 0);
+  const pendiente = filtered.filter((x) => !x.estado).reduce((a, g) => a + g.monto, 0);
+
+  const pieData = [
+    { name: "Pagado", population: pagado, color: "#10B981", legendFontColor: TEXT_MUTED, legendFontSize: Math.round(11 * S) },
+    { name: "Pendiente", population: pendiente, color: "#F59E0B", legendFontColor: TEXT_MUTED, legendFontSize: Math.round(11 * S) },
+  ];
+
+  /* ======= SALDOS (solo pendientes) ======= */
+  const listaNombres: string[] = useMemo(() => {
+    if (participantes.length > 0) return participantes.map((p) => p.nombre || "—");
+    const set = new Set<string>();
+    gastos.forEach((g) => set.add(g.pagador_nombre || "—"));
+    return Array.from(set);
+  }, [participantes, gastos]);
+
+  const gastosBase = useMemo(() => gastos.filter((g) => !g.estado), [gastos]);
+
+  type Saldo = { nombre: string; pago: number; debe: number; saldo: number };
+  const saldos: Saldo[] = useMemo(() => {
+    const N = listaNombres.length;
+    if (N <= 0) return [];
+    const map = new Map<string, Saldo>();
+    listaNombres.forEach((n) => map.set(n, { nombre: n, pago: 0, debe: 0, saldo: 0 }));
+
+    gastosBase.forEach((g) => {
+      const pagador = (g.pagador_nombre || "—").trim();
+      const cuota = N > 0 ? g.monto / N : 0;
+
+      const sPag = map.get(pagador);
+      if (sPag) sPag.pago += g.monto;
+
+      listaNombres.forEach((n) => {
+        if (n === pagador) return;
+        const s = map.get(n)!;
+        s.debe += cuota;
+      });
+    });
+
+    map.forEach((s) => (s.saldo = Math.round(s.pago - s.debe)));
+    return Array.from(map.values());
+  }, [listaNombres, gastosBase]);
+
+  /* ======= UI ======= */
+  if (loading)
     return (
       <View style={styles.center}>
         <ActivityIndicator size="large" color={PRIMARY} />
         <Text style={{ color: TEXT_MUTED, marginTop: 8 }}>Cargando dashboard…</Text>
       </View>
     );
-  }
 
   return (
     <ScrollView
       style={styles.container}
-      contentContainerStyle={{ paddingBottom: Math.round(20 * S) }}
-      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      contentContainerStyle={{ paddingBottom: 24 }}
     >
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.appTitle}>Reparte+</Text>
-        <Text style={styles.pageTitle}>Dashboard del Evento</Text>
-        <Text style={styles.groupName}>{grupo?.nombre ?? "Evento"}</Text>
+      {/* ======= HERO TEAL ======= */}
+      <LinearGradient
+        colors={[SECONDARY, PRIMARY_DARK]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.hero}
+      >
+        {/* fila superior: back — brand — refresh */}
+        <View style={styles.heroTopRow}>
+          <Pressable onPress={() => router.back()} style={styles.heroIconBtn} hitSlop={8}>
+            <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
+          </Pressable>
 
-        <View style={styles.badgesRow}>
-          <InfoBadge icon="calendar-start" label="Inicio" value={fmtDate(grupo?.fecha_inicio)} />
-          <InfoBadge icon="calendar-end" label="Término" value={fmtDate(grupo?.fecha_cierre)} />
-          <InfoBadge icon="account" label="Creador" value={grupo?.creador_nombre || "—"} />
+          <Text style={styles.heroBrand} numberOfLines={1} ellipsizeMode="tail">
+            Reparte+
+          </Text>
+
+          <Pressable onPress={fetchData} style={styles.heroIconBtn} hitSlop={8}>
+            <MaterialCommunityIcons name="refresh" size={20} color="#fff" />
+          </Pressable>
         </View>
+
+        {/* títulos centrados */}
+        <Text style={styles.heroSubtitle} numberOfLines={1} ellipsizeMode="tail">
+          Dashboard del Evento
+        </Text>
+
+        <Text style={styles.heroTitle} numberOfLines={1} ellipsizeMode="tail">
+          {grupo?.nombre ?? "Evento"}
+        </Text>
+
+        {!!grupo?.descripcion && (
+          <Text style={styles.heroDesc} numberOfLines={1} ellipsizeMode="tail">
+            {grupo.descripcion}
+          </Text>
+        )}
+      </LinearGradient>
+
+      {/* ======= BADGES sobre el hero ======= */}
+      <View style={styles.heroBadgesRow}>
+        <MiniBadge icon="account" label="CREADOR" value={grupo?.creador_nombre || "—"} />
+        <MiniBadge icon="calendar-start" label="INICIO" value={fmtDate(grupo?.fecha_inicio)} />
+        <MiniBadge icon="calendar-end" label="TÉRMINO" value={fmtDate(grupo?.fecha_cierre)} />
       </View>
 
-      {/* KPIs */}
-      <View style={styles.card}>
+      {/* ======= RESUMEN (KPI) ======= */}
+      <Animated.View style={[styles.card, { opacity: resumenOpacity }]}>
         <Text style={styles.cardTitle}>Resumen</Text>
         <View style={styles.kpis}>
           <Kpi label="Total del evento" value={money(totalEvento)} icon="cash-multiple" />
           <Kpi label="Gastos filtrados" value={`${filtered.length}`} icon="filter-variant" />
-          <Kpi label="Total filtrado" value={money(totalFiltrado)} icon="chart-donut" />
+          <Kpi label="Monto filtrado" value={money(totalFiltrado)} icon="chart-donut" />
         </View>
-      </View>
+      </Animated.View>
 
-      {/* Controles */}
+      {/* ======= CONTROLES (BUSCADOR + CHIPS) ======= */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Controles</Text>
 
         <View style={styles.searchRow}>
           <MaterialCommunityIcons name="magnify" size={18} color={TEXT_MUTED} />
           <TextInput
-            placeholder="Buscar (concepto, pagador, CLP...)"
+            placeholder="Buscar (concepto o pagador)"
             placeholderTextColor={TEXT_MUTED}
             value={search}
             onChangeText={setSearch}
             style={styles.input}
           />
-        </View>
-
-        <View style={styles.rowChips}>
-          <Chip label="Todo" active={range === "all"} onPress={() => setRange("all")} />
-          <Chip label="7 días" active={range === "7d"} onPress={() => setRange("7d")} />
-          <Chip label="30 días" active={range === "30d"} onPress={() => setRange("30d")} />
+          {search.length > 0 && (
+            <Pressable onPress={() => setSearch("")} hitSlop={6}>
+              <MaterialCommunityIcons name="close-circle" size={18} color={TEXT_MUTED} />
+            </Pressable>
+          )}
         </View>
 
         <View style={styles.rowChips}>
           <Chip label="Todos" active={estado === "all"} onPress={() => setEstado("all")} />
           <Chip label="Pagados" active={estado === "pagado"} onPress={() => setEstado("pagado")} />
-          <Chip
-            label="Pendientes"
-            active={estado === "pendiente"}
-            onPress={() => setEstado("pendiente")}
-          />
-        </View>
-
-        <View style={styles.rowChips}>
-          <Chip
-            label={`Orden: ${sortBy === "fecha" ? "Fecha" : "Monto"}`}
-            active
-            onPress={() => setSortBy(sortBy === "fecha" ? "monto" : "fecha")}
-            icon={sortBy === "fecha" ? "calendar-range" : "cash"}
-          />
-          <Chip
-            label={sortDir === "desc" ? "Desc" : "Asc"}
-            active
-            onPress={() => setSortDir(sortDir === "desc" ? "asc" : "desc")}
-            icon={sortDir === "desc" ? "arrow-down" : "arrow-up"}
-          />
-          <Chip
-            label={`Agrupar: ${
-              groupBy === "none" ? "Ninguno" : groupBy === "pagador" ? "Pagador" : "Fecha"
-            }`}
-            active
-            onPress={() =>
-              setGroupBy(groupBy === "none" ? "pagador" : groupBy === "pagador" ? "fecha" : "none")
-            }
-            icon="view-grid-outline"
-          />
+          <Chip label="Pendientes" active={estado === "pendiente"} onPress={() => setEstado("pendiente")} />
         </View>
       </View>
 
-      {/* ===== Gráficas (según filtros actuales) ===== */}
+      {/* ======= GRÁFICAS ======= */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Gráficas (con filtros)</Text>
+        <Text style={styles.cardTitle}>Gráficas</Text>
 
-        {/* Top pagadores */}
-        <Text style={styles.cardSub}>Top pagadores (monto)</Text>
-        {topPagadores.length > 0 ? (
+        <Text style={styles.cardSub}>Pagadores (monto)</Text>
+        {barData.datasets[0].data.length > 0 ? (
           <BarChart
             width={chartWidth}
             height={chartHeight}
-            data={barDataTopPagadores}
-            yAxisLabel=""
-            yAxisSuffix=" CLP"
+            data={barData}
+            fromZero
+            segments={4}
+            yLabelsOffset={8}
+            showValuesOnTopOfBars
             chartConfig={{
               backgroundGradientFrom: CARD,
               backgroundGradientTo: CARD,
               decimalPlaces: 0,
               color: (opacity = 1) => `rgba(14,165,164,${opacity})`,
               labelColor: () => TEXT_MUTED,
-              propsForDots: { r: "0" },
               propsForBackgroundLines: { stroke: BORDER },
             }}
+            formatYLabel={(val: string) => `${fmtMiles(Number(val))} CLP`}
             style={{ borderRadius: 12, alignSelf: "center", marginTop: 8 }}
-            fromZero
-            showBarTops={false}
+            verticalLabelRotation={0}
           />
         ) : (
-          <Text style={styles.emptyInfo}>No hay datos para este gráfico.</Text>
+          <Text style={styles.emptyInfo}>No hay datos suficientes.</Text>
         )}
 
-        {/* Pie estado */}
         <Text style={[styles.cardSub, { marginTop: 12 }]}>Monto por estado</Text>
-        {totalsEstado.pagado + totalsEstado.pendiente > 0 ? (
+        {pagado + pendiente > 0 ? (
           <PieChart
-            data={pieDataEstado.map((d) => ({
-              name: d.name,
-              population: d.amount,
-              color: d.color,
-              legendFontColor: d.legendFontColor,
-              legendFontSize: d.legendFontSize,
-            }))}
+            data={pieData}
             width={chartWidth}
-            height={Math.round(180 * S)}
+            height={180}
             accessor="population"
             backgroundColor="transparent"
             paddingLeft="16"
             absolute
             hasLegend
-            chartConfig={{
-              color: () => PRIMARY,
-              labelColor: () => TEXT_MUTED,
-            }}
+            chartConfig={{ color: () => PRIMARY, labelColor: () => TEXT_MUTED }}
             style={{ alignSelf: "center", marginTop: 8 }}
           />
         ) : (
@@ -559,62 +457,70 @@ export default function GraficoGastosEvento() {
         )}
       </View>
 
-      {/* ===== Lista / dashboard de gastos ===== */}
+      {/* ======= SALDOS (fade-in) ======= */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Gastos</Text>
-        {grouped.map((grp) => {
-          const isOpen = expanded[grp.key] ?? true;
-          return (
-            <View key={grp.key} style={styles.groupBlock}>
-              {groupBy !== "none" && (
-                <Pressable
-                  onPress={() => toggleExpand(grp.key)}
-                  style={({ pressed }) => [styles.groupHeader, pressed && { opacity: 0.85 }]}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                    <MaterialCommunityIcons
-                      name={isOpen ? "chevron-down" : "chevron-right"}
-                      size={18}
-                      color={INK}
-                    />
-                    <Text style={styles.groupTitle}>{grp.title}</Text>
-                  </View>
-                  <Text style={styles.groupTotal}>{money(grp.total)}</Text>
-                </Pressable>
-              )}
+        <Text style={styles.cardTitle}>Saldos del grupo</Text>
 
-              {(isOpen ? grp.items : []).map((g) => {
-                const pagador = g.pagador_nombre || nombreParticipante(g.participante_id) || "—";
-                return (
-                  <View key={g.id} style={styles.row}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowTitle}>{g.descripcion}</Text>
-                      <Text style={styles.rowSub}>
-                        {g.estado ? "Pagado" : "Pendiente"} • {pagador}
-                        {g.fecha ? ` • ${fmtDate(g.fecha)}` : ""}
-                      </Text>
-                    </View>
-                    <Text style={styles.rowAmount}>{money(g.monto)}</Text>
+        <Animated.View style={{ opacity: saldosOpacity }}>
+          {saldos.length === 0 ? (
+            <Text style={styles.emptyInfo}>No hay gastos pendientes 🎉</Text>
+          ) : (
+            saldos.map((s, i) => (
+              <View
+                key={s.nombre}
+                style={[
+                  styles.saldoRow,
+                  { backgroundColor: i % 2 === 0 ? "#F9FAFB" : "#FFFFFF" },
+                ]}
+              >
+                <MaterialCommunityIcons
+                  name="account-circle"
+                  size={24}
+                  color={PRIMARY}
+                  style={{ marginRight: 8 }}
+                />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.saldoNombre}>{s.nombre}</Text>
+                  <View style={styles.saldoLine}>
+                    <Text style={[styles.saldoKV, styles.saldoPago]}>
+                      Pagó: {money(s.pago)}
+                    </Text>
+                    <Text style={styles.saldoSep}> • </Text>
+                    <Text style={[styles.saldoKV, styles.saldoDebe]}>
+                      Debe: {money(s.debe)}
+                    </Text>
                   </View>
-                );
-              })}
-            </View>
-          );
-        })}
-
-        {filtered.length === 0 && (
-          <Text style={{ color: TEXT_MUTED, marginTop: 6 }}>
-            No hay gastos con los filtros actuales.
-          </Text>
-        )}
+                </View>
+              </View>
+            ))
+          )}
+        </Animated.View>
       </View>
 
-      {/* Volver */}
-      <Pressable
-        onPress={() => router.back()}
-        style={({ pressed }) => [styles.backBtn, pressed && { opacity: 0.9 }]}
-        android_ripple={{ color: "rgba(255,255,255,0.15)" }}
-      >
+      {/* ======= LISTA DE GASTOS ======= */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Gastos</Text>
+        {filtered.map((g) => (
+          <View key={g.id} style={styles.row}>
+            <MaterialCommunityIcons
+              name={g.estado ? "check-circle" : "clock-outline"}
+              size={18}
+              color={g.estado ? "#16A34A" : "#F59E0B"}
+              style={{ marginRight: 8 }}
+            />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>{g.descripcion}</Text>
+              <Text style={styles.rowSub}>
+                Pagador: {g.pagador_nombre} {g.fecha ? `• ${fmtDate(g.fecha)}` : ""}
+              </Text>
+            </View>
+            <Text style={styles.rowAmount}>{money(g.monto)}</Text>
+          </View>
+        ))}
+      </View>
+
+      {/* ======= Volver ======= */}
+      <Pressable onPress={() => router.back()} style={styles.backBtn}>
         <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
         <Text style={styles.backBtnText}>Volver al grupo</Text>
       </Pressable>
@@ -622,14 +528,14 @@ export default function GraficoGastosEvento() {
   );
 }
 
-/* ==================  UI helpers  ================== */
-const InfoBadge = ({ icon, label, value }: { icon: any; label: string; value?: string }) => (
-  <View style={styles.badge}>
-    <MaterialCommunityIcons name={icon} size={16} color={PRIMARY} />
-    <View style={{ marginLeft: Math.round(6 * S) }}>
-      <Text style={styles.badgeLabel}>{label.toUpperCase()}</Text>
-      <Text style={styles.badgeValue}>{value || "—"}</Text>
+/* ======= Componentes UI ======= */
+const MiniBadge = ({ icon, label, value }: { icon: any; label: string; value?: string }) => (
+  <View style={styles.miniBadge}>
+    <View style={styles.miniIconWrap}>
+      <MaterialCommunityIcons name={icon} size={16} color={PRIMARY} />
     </View>
+    <Text style={styles.miniLabel}>{label}</Text>
+    <Text style={styles.miniValue}>{value || "—"}</Text>
   </View>
 );
 
@@ -645,105 +551,138 @@ function Chip({
   label,
   active,
   onPress,
-  icon,
 }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
-  icon?: any;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.chip,
-        active && styles.chipActive,
-        pressed && { opacity: 0.9 },
-      ]}
-      hitSlop={6}
-    >
-      {icon && (
-        <MaterialCommunityIcons
-          name={icon}
-          size={14}
-          color={active ? "#fff" : PRIMARY}
-          style={{ marginRight: 4 }}
-        />
-      )}
+    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]} hitSlop={6}>
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </Pressable>
   );
 }
 
-/* ==================  estilos ================== */
+/* ======= Estilos ======= */
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG },
-  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: BG },
+  center: { flex: 1, alignItems: "center", justifyContent: "center" },
 
-  header: {
-    paddingHorizontal: Math.round(12 * S),
-    paddingTop: Math.round(14 * S),
-    paddingBottom: Math.round(8 * S),
+  /* HERO */
+  hero: {
+    paddingTop: 14,
+    paddingBottom: 28,
+    paddingHorizontal: 12,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
   },
-  appTitle: { fontSize: Math.round(18 * S), fontWeight: "800", color: INK, textAlign: "center" },
-  pageTitle: {
-    fontSize: Math.round(16 * S),
-    fontWeight: "700",
-    color: INK,
-    textAlign: "center",
-    marginTop: Math.round(2 * S),
+  heroTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  groupName: {
-    fontSize: Math.round(22 * S),
+  heroIconBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderColor: "rgba(255,255,255,0.25)",
+    borderWidth: 1,
+  },
+  heroBrand: {
+    color: "#fff",
+    fontSize: 18,
     fontWeight: "800",
-    color: INK,
+    flex: 1,
     textAlign: "center",
-    marginTop: Math.round(4 * S),
+    paddingHorizontal: 8,
+  },
+heroSubtitle: {
+    color: "rgba(255,255,255,0.9)",
+    marginTop: 12,
+    fontWeight: "700",
+    textAlign: "center",
+    paddingHorizontal: 12,
+  },
+  heroTitle: {
+    color: "#fff",
+    fontSize: 28,
+    fontWeight: "900",
+    marginTop: 2,
+    textAlign: "center",
+    paddingHorizontal: 12,
+  },
+  heroDesc: {
+    color: "rgba(255,255,255,0.9)",
+    marginTop: 2,
+    textAlign: "center",
+    paddingHorizontal: 12,
   },
 
-  badgesRow: { flexDirection: "row", gap: Math.round(8 * S), marginTop: Math.round(10 * S) },
-  badge: {
+  heroBadgesRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: -18,
+    paddingHorizontal: 12,
+  },
+
+  miniBadge: {
     flex: 1,
     backgroundColor: CARD,
-    padding: Math.round(10 * S),
-    borderRadius: Math.round(14 * S),
+    borderRadius: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: BORDER,
-  },
-  badgeLabel: { fontSize: Math.round(10 * S), color: TEXT_MUTED, fontWeight: "700", letterSpacing: 0.4 },
-  badgeValue: { fontSize: Math.round(13 * S), color: TEXT, marginTop: Math.round(3 * S), fontWeight: "700" },
-
-  card: {
-    marginHorizontal: Math.round(12 * S),
-    marginTop: Math.round(12 * S),
-    backgroundColor: CARD,
-    borderRadius: Math.round(14 * S),
-    borderWidth: 1,
-    borderColor: BORDER,
-    padding: Math.round(10 * S),
     shadowColor: "#000",
     shadowOpacity: 0.05,
     shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
     elevation: 2,
+    alignItems: "center", // centra icono y textos
   },
-  cardTitle: { fontSize: Math.round(16 * S), fontWeight: "800", color: INK },
-  cardSub: { fontSize: Math.round(12 * S), color: TEXT_MUTED, marginTop: Math.round(6 * S) },
-  emptyInfo: { color: TEXT_MUTED, marginTop: Math.round(8 * S), fontSize: Math.round(12 * S) },
+  miniIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: "#ECFEFF",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  miniLabel: { fontSize: 10, color: TEXT_MUTED, fontWeight: "700" },
+  miniValue: { fontSize: 14, color: INK, fontWeight: "800", marginTop: 2 },
 
-  kpis: { flexDirection: "row", gap: Math.round(8 * S), marginTop: Math.round(8 * S) },
+  /* Cards comunes */
+  card: {
+    marginHorizontal: 12,
+    marginTop: 12,
+    backgroundColor: CARD,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: BORDER,
+    padding: 10,
+  },
+  cardTitle: { fontSize: 16, fontWeight: "800", color: INK },
+  cardSub: { fontSize: 12, color: TEXT_MUTED, marginTop: 6 },
+  emptyInfo: { fontSize: 13, color: TEXT_MUTED, marginTop: 8 },
+
+  /* KPIs */
+  kpis: { flexDirection: "row", gap: 8, marginTop: 8 },
   kpi: {
     flex: 1,
     backgroundColor: "#FFFFFF",
-    paddingVertical: Math.round(10 * S),
-    borderRadius: Math.round(12 * S),
+    paddingVertical: 12,
+    borderRadius: 12,
     alignItems: "center",
     borderWidth: 1,
     borderColor: BORDER,
   },
-  kpiValue: { fontSize: Math.round(16 * S), fontWeight: "800", color: INK, marginTop: Math.round(2 * S) },
-  kpiLabel: { fontSize: Math.round(11 * S), color: TEXT_MUTED, marginTop: Math.round(2 * S), textAlign: "center" },
+  kpiValue: { fontSize: 16, fontWeight: "800", color: INK, marginTop: 2 },
+  kpiLabel: { fontSize: 11, color: TEXT_MUTED, marginTop: 2, textAlign: "center" },
 
+  /* Controles */
   searchRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -755,10 +694,8 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     marginTop: 8,
   },
-  input: { flex: 1, color: INK, paddingVertical: 2, fontSize: Math.round(13 * S) },
-
+  input: { flex: 1, color: INK, paddingVertical: 2, fontSize: 13 },
   rowChips: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 8 },
-
   chip: {
     flexDirection: "row",
     alignItems: "center",
@@ -770,51 +707,53 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff",
   },
   chipActive: { backgroundColor: PRIMARY, borderColor: PRIMARY },
-  chipText: { color: PRIMARY, fontWeight: "700", fontSize: Math.round(12 * S) },
+  chipText: { color: PRIMARY, fontWeight: "700", fontSize: 12 },
   chipTextActive: { color: "#fff" },
 
-  /* Lista / grupos */
-  groupBlock: { marginTop: 6 },
-  groupHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-  },
-  groupTitle: { color: INK, fontWeight: "800", fontSize: Math.round(14 * S) },
-  groupTotal: { color: INK, fontWeight: "800", fontSize: Math.round(13 * S) },
-
+  /* Lista gastos */
   row: {
     flexDirection: "row",
     alignItems: "center",
     borderTopWidth: 1,
     borderTopColor: BORDER,
-    paddingVertical: Math.round(10 * S),
+    paddingVertical: 10,
   },
-  rowTitle: { color: INK, fontWeight: "800", fontSize: Math.round(15 * S) },
-  rowSub: { color: TEXT_MUTED, marginTop: Math.round(2 * S), fontSize: Math.round(12 * S) },
-  rowAmount: { color: INK, fontWeight: "800", fontSize: Math.round(13 * S) },
+  rowTitle: { color: INK, fontWeight: "800", fontSize: 15 },
+  rowSub: { color: TEXT_MUTED, marginTop: 2, fontSize: 12 },
+  rowAmount: { color: INK, fontWeight: "800", fontSize: 13 },
 
+  /* Saldos */
+  saldoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    marginBottom: 2,
+  },
+  saldoNombre: { fontSize: 15, fontWeight: "700", color: INK },
+  saldoLine: { flexDirection: "row", alignItems: "center", flexWrap: "wrap", marginTop: 2 },
+  saldoKV: { fontSize: 12, fontWeight: "700" },
+  saldoPago: { color: "#16A34A" },
+  saldoDebe: { color: "#EF4444" },
+  saldoSep: { fontSize: 12, color: TEXT_MUTED, marginHorizontal: 4 },
+
+  /* Back button */
   backBtn: {
-    marginHorizontal: Math.round(12 * S),
-    marginTop: Math.round(16 * S),
-    marginBottom: Math.round(18 * S),
+    marginHorizontal: 12,
+    marginTop: 16,
+    marginBottom: 18,
     backgroundColor: PRIMARY,
-    borderRadius: Math.round(16 * S),
-    paddingVertical: Math.round(14 * S),
+    borderRadius: 16,
+    paddingVertical: 14,
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "center",
-    gap: Math.round(6 * S),
+    gap: 6,
     borderWidth: 1,
     borderColor: SECONDARY,
-    shadowColor: PRIMARY,
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 3,
   },
-  backBtnText: { color: "#fff", fontSize: Math.round(14 * S), fontWeight: "800" },
+  backBtnText: { color: "#fff", fontSize: 14, fontWeight: "800" },
 });
