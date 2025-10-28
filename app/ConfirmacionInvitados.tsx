@@ -243,7 +243,7 @@ export default function ConfirmacionInvitados() {
     >
       <View style={styles.headerRow}>
         <Pressable
-          onPress={() => router.back()}
+          onPress={() => router.replace('/DetalleGrupo')}
           style={({ pressed }) => [styles.iconGlass, pressed && styles.press]}
           hitSlop={10}
         >
