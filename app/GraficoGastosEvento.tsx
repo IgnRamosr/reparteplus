@@ -68,6 +68,7 @@ type Gasto = {
   fecha?: string;
   estado: boolean;
   pagador_nombre?: string;
+  [k: string]: any;
 };
 
 /* ======= Helpers ======= */
@@ -88,7 +89,7 @@ const parseEstado = (v: any): boolean => {
   return false;
 };
 
-/* ✅ Helper robusto para tomar la descripción sin importar el nombre del campo */
+/* Descripción robusta */
 function pickDescripcion(row: any): string {
   if (!row || typeof row !== "object") return "Sin descripción";
   const keys = Object.keys(row);
@@ -120,6 +121,48 @@ function pickDescripcion(row: any): string {
   return "Sin descripción";
 }
 
+/* Extrae nombres posibles desde un registro de gasto (detalle/split) */
+function extractNamesFromGastoRow(r: any): string[] {
+  if (!r || typeof r !== "object") return [];
+  const names: string[] = [];
+  const arrayKeys = [
+    "integrantes",
+    "participantes",
+    "miembros",
+    "detalle",
+    "detalles",
+    "gasto_participante",
+    "gp",
+    "split",
+    "shares",
+  ];
+  const nameKeys = [
+    "nombre",
+    "nombre_participante",
+    "participante_nombre",
+    "nombres",
+    "fullname",
+    "display_name",
+    "alias",
+    "email",
+  ];
+  for (const ak of arrayKeys) {
+    const arr = r?.[ak];
+    if (Array.isArray(arr)) {
+      for (const it of arr) {
+        for (const nk of nameKeys) {
+          if (it?.[nk]) {
+            const n = String(it[nk]).trim();
+            if (n) names.push(n);
+            break;
+          }
+        }
+      }
+    }
+  }
+  return names;
+}
+
 /* ======= COMPONENTE PRINCIPAL ======= */
 export default function GraficoGastosEvento() {
   const { id, nombre } = useLocalSearchParams<{ id: string; nombre?: string }>();
@@ -127,28 +170,24 @@ export default function GraficoGastosEvento() {
   const [grupo, setGrupo] = useState<Grupo | null>(null);
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [participantes, setParticipantes] = useState<Participante[]>([]);
+  const [extraNombresDetalle, setExtraNombresDetalle] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
   const [estado, setEstado] = useState<"all" | "pagado" | "pendiente">("all");
 
-  /* ======= Animaciones ======= */
+  /* Animaciones */
   const saldosOpacity = useRef(new Animated.Value(0)).current;
   const resumenOpacity = useRef(new Animated.Value(0)).current;
   const runFade = useCallback(() => {
     const anim = (v: Animated.Value) =>
-      Animated.timing(v, {
-        toValue: 1,
-        duration: 320,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      });
+      Animated.timing(v, { toValue: 1, duration: 320, easing: Easing.out(Easing.cubic), useNativeDriver: true });
     saldosOpacity.setValue(0);
     resumenOpacity.setValue(0);
     Animated.stagger(120, [anim(resumenOpacity), anim(saldosOpacity)]).start();
   }, [saldosOpacity, resumenOpacity]);
 
-  /* ======= FETCH DATA ======= */
+  /* FETCH DATA */
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
@@ -166,42 +205,90 @@ export default function GraficoGastosEvento() {
         descripcion: g.descripcion ?? "Salida",
       });
 
-      // Participantes
+      // Participantes (acepta varias formas de respuesta)
+      let parr: any[] = [];
+      const tryFetch = async (paramName: string) => {
+        const pRes = await apiGrupo.get("/grupo/participantes", { params: { [paramName]: id, _t } });
+        return pRes?.data?.participantes ?? pRes?.data?.resultados ?? pRes?.data?.rows ?? pRes?.data ?? [];
+      };
       try {
-        const pRes = await apiGrupo.get("/grupo/participantes", { params: { grupoId: id, _t } });
-        const parr: any[] = pRes?.data?.participantes ?? [];
-        setParticipantes(
-          parr.map((p: any, i: number) => ({
-            participante_id: Number(p.participante_id ?? i),
-            nombre: p.nombre ?? p.email ?? `Participante ${i + 1}`,
-            email: p.email,
-          }))
-        );
+        parr = await tryFetch("grupoId");
+        if (!Array.isArray(parr) || parr.length === 0) parr = await tryFetch("groupId");
+        if (!Array.isArray(parr) || parr.length === 0) parr = await tryFetch("id_grupo");
+        if (!Array.isArray(parr) || parr.length === 0) parr = await tryFetch("id");
       } catch {
-        setParticipantes([]);
+        parr = [];
       }
+      setParticipantes(
+        (Array.isArray(parr) ? parr : []).map((p: any, i: number) => ({
+          participante_id:
+            Number(p.participante_id ?? p.id_participante ?? p.id ?? p.usuario_id ?? i),
+          nombre: String(p.nombre ?? p.nombre_participante ?? p.participante_nombre ?? p.alias ?? p.email ?? `Participante ${i + 1}`).trim(),
+          email: p?.email,
+        }))
+      );
 
       // Gastos
       const gastosRes = await apiGasto.get("/gastos", { params: { grupoId: id, _t } });
       const arr: any[] = gastosRes.data?.resultados ?? gastosRes.data ?? [];
-      setGastos(
-        arr.map((r: any, i: number) => ({
-          id: String(r.id ?? r.gasto_id ?? r.uuid ?? i),
-          descripcion: pickDescripcion(r),
-          monto: Number(r.monto ?? r.total ?? r.valor ?? r.precio ?? 0),
-          moneda: r.moneda ?? r.divisa ?? "CLP",
-          fecha: r.fecha ?? r.fecha_registro ?? r.created_at ?? undefined,
-          estado: parseEstado(r.estado ?? r.pagado ?? r.is_paid ?? r.estado_pago),
-          pagador_nombre:
-            r.pagador_nombre ??
-            r.nombre_pagador ??
-            r.pagador ??
-            r.participante_nombre ??
-            r.nombre_participante ??
-            r.autor ??
-            "—",
-        }))
-      );
+      const gastosMap = arr.map((r: any, i: number) => ({
+        id: String(r.id ?? r.gasto_id ?? r.uuid ?? i),
+        descripcion: pickDescripcion(r),
+        monto: Number(r.monto ?? r.total ?? r.valor ?? r.precio ?? 0),
+        moneda: r.moneda ?? r.divisa ?? "CLP",
+        fecha: r.fecha ?? r.fecha_registro ?? r.created_at ?? undefined,
+        estado: parseEstado(r.estado ?? r.pagado ?? r.is_paid ?? r.estado_pago),
+        pagador_nombre:
+          r.pagador_nombre ??
+          r.nombre_pagador ??
+          r.pagador ??
+          r.participante_nombre ??
+          r.nombre_participante ??
+          r.autor ??
+          "—",
+        ...r,
+      }));
+      setGastos(gastosMap);
+
+      // ===== Fallback estilo DetalleGasto: /gasto-detalle por cada gasto =====
+      // Si la API de participantes vino vacía o incompleta (<2) recogemos nombres desde los detalles.
+      let namesFromDetalles: string[] = [];
+      try {
+        const toQuery = gastosMap.slice(0, 12); // evitar spam si hay muchos
+        const results = await Promise.allSettled(
+          toQuery.map((g) =>
+            apiGasto.get("/gasto-detalle", { params: { gastoId: g.id, _t } })
+          )
+        );
+        for (const r of results) {
+          if (r.status === "fulfilled") {
+            const integ =
+              r.value?.data?.integrantes ??
+              r.value?.data?.participantes ??
+              r.value?.data?.detalle ??
+              [];
+            if (Array.isArray(integ)) {
+              integ.forEach((p: any) => {
+                const n =
+                  p?.nombre ??
+                  p?.nombre_participante ??
+                  p?.participante_nombre ??
+                  p?.alias ??
+                  p?.email;
+                if (n) namesFromDetalles.push(String(n).trim());
+              });
+            }
+          }
+        }
+      } catch {
+        // ignore
+      }
+      // También intenta extraer nombres si vinieron embebidos en el propio gasto
+      gastosMap.forEach((r) => {
+        extractNamesFromGastoRow(r).forEach((n) => namesFromDetalles.push(n));
+      });
+      setExtraNombresDetalle(namesFromDetalles);
+      // ===== fin fallback =====
     } catch {
       Alert.alert("Error", "No se pudieron cargar los datos.");
     } finally {
@@ -278,11 +365,35 @@ export default function GraficoGastosEvento() {
 
   /* ======= SALDOS (solo pendientes) ======= */
   const listaNombres: string[] = useMemo(() => {
-    if (participantes.length > 0) return participantes.map((p) => p.nombre || "—");
     const set = new Set<string>();
-    gastos.forEach((g) => set.add(g.pagador_nombre || "—"));
-    return Array.from(set);
-  }, [participantes, gastos]);
+
+    // 1) Participantes del grupo
+    participantes.forEach((p) => {
+      const n = (p?.nombre || p?.email || "—").toString().trim();
+      if (n) set.add(n);
+    });
+
+    // 2) Pagadores presentes en los gastos
+    gastos.forEach((g) => {
+      const n = (g?.pagador_nombre || "—").toString().trim();
+      if (n) set.add(n);
+    });
+
+    // 3) Nombres obtenidos por fallback de /gasto-detalle o embebidos en el gasto
+    extraNombresDetalle.forEach((n) => {
+      const v = String(n).trim();
+      if (v) set.add(v);
+    });
+
+    // 4) Creador
+    if (grupo?.creador_nombre) {
+      const n = String(grupo.creador_nombre).trim();
+      if (n) set.add(n);
+    }
+
+    const arr = Array.from(set);
+    return arr.length > 0 ? arr : ["—"];
+  }, [participantes, gastos, extraNombresDetalle, grupo?.creador_nombre]);
 
   const gastosBase = useMemo(() => gastos.filter((g) => !g.estado), [gastos]);
 
@@ -333,7 +444,6 @@ export default function GraficoGastosEvento() {
         end={{ x: 1, y: 1 }}
         style={styles.hero}
       >
-        {/* fila superior: back — brand — refresh */}
         <View style={styles.heroTopRow}>
           <Pressable onPress={() => router.back()} style={styles.heroIconBtn} hitSlop={8}>
             <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
@@ -348,7 +458,6 @@ export default function GraficoGastosEvento() {
           </Pressable>
         </View>
 
-        {/* títulos centrados */}
         <Text style={styles.heroSubtitle} numberOfLines={1} ellipsizeMode="tail">
           Dashboard del Evento
         </Text>
@@ -364,7 +473,7 @@ export default function GraficoGastosEvento() {
         )}
       </LinearGradient>
 
-      {/* ======= BADGES sobre el hero ======= */}
+      {/* ======= BADGES ======= */}
       <View style={styles.heroBadgesRow}>
         <MiniBadge icon="account" label="CREADOR" value={grupo?.creador_nombre || "—"} />
         <MiniBadge icon="calendar-start" label="INICIO" value={fmtDate(grupo?.fecha_inicio)} />
@@ -381,28 +490,11 @@ export default function GraficoGastosEvento() {
         </View>
       </Animated.View>
 
-      {/* ======= CONTROLES (BUSCADOR + CHIPS) ======= */}
+      {/* ======= CONTROLES ======= */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Controles</Text>
 
-        <View style={styles.searchRow}>
-          <MaterialCommunityIcons name="magnify" size={18} color={TEXT_MUTED} />
-          <TextInput
-            placeholder="Buscar (concepto o pagador)"
-            placeholderTextColor={TEXT_MUTED}
-            value={search}
-            onChangeText={setSearch}
-            style={styles.input}
-          />
-          {search.length > 0 && (
-            <Pressable onPress={() => setSearch("")} hitSlop={6}>
-              <MaterialCommunityIcons name="close-circle" size={18} color={TEXT_MUTED} />
-            </Pressable>
-          )}
-        </View>
-
         <View style={styles.rowChips}>
-          <Chip label="Todos" active={estado === "all"} onPress={() => setEstado("all")} />
           <Chip label="Pagados" active={estado === "pagado"} onPress={() => setEstado("pagado")} />
           <Chip label="Pendientes" active={estado === "pendiente"} onPress={() => setEstado("pendiente")} />
         </View>
@@ -412,7 +504,7 @@ export default function GraficoGastosEvento() {
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Gráficas</Text>
 
-        <Text style={styles.cardSub}>Pagadores (monto)</Text>
+        <Text style={styles.cardSub}>Gastos Evento</Text>
         {barData.datasets[0].data.length > 0 ? (
           <BarChart
             width={chartWidth}
@@ -499,7 +591,7 @@ export default function GraficoGastosEvento() {
 
       {/* ======= LISTA DE GASTOS ======= */}
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>Gastos</Text>
+        <Text style={styles.cardTitle}>Gastos Evento</Text>
         {filtered.map((g) => (
           <View key={g.id} style={styles.row}>
             <MaterialCommunityIcons
@@ -511,7 +603,7 @@ export default function GraficoGastosEvento() {
             <View style={{ flex: 1 }}>
               <Text style={styles.rowTitle}>{g.descripcion}</Text>
               <Text style={styles.rowSub}>
-                Pagador: {g.pagador_nombre} {g.fecha ? `• ${fmtDate(g.fecha)}` : ""}
+                Pagador: {g.pagador_nombre} {g.fecha ? `• Fecha: ${fmtDate(g.fecha)}` : ""}
               </Text>
             </View>
             <Text style={styles.rowAmount}>{money(g.monto)}</Text>
@@ -599,7 +691,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 8,
   },
-heroSubtitle: {
+  heroSubtitle: {
     color: "rgba(255,255,255,0.9)",
     marginTop: 12,
     fontWeight: "700",
@@ -640,7 +732,7 @@ heroSubtitle: {
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
-    alignItems: "center", // centra icono y textos
+    alignItems: "center",
   },
   miniIconWrap: {
     width: 28,
