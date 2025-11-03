@@ -243,7 +243,9 @@ export default function ConfirmacionInvitados() {
     >
       <View style={styles.headerRow}>
         <Pressable
-          onPress={() => router.replace('/DetalleGrupo')}
+          onPress={() => router.replace({
+          pathname:"/DetalleGrupo",
+          params:{id:groupId}})}
           style={({ pressed }) => [styles.iconGlass, pressed && styles.press]}
           hitSlop={10}
         >

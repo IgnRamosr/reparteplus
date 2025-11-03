@@ -166,7 +166,7 @@ export default function DetalleGastoScreen() {
   const [grupoResumen, setGrupoResumen] = useState<GrupoResumen | null>(null);
   const [gastosGrupo, setGastosGrupo] = useState<GastoGrupo[]>([]);
 
-  const goBack = useCallback(() => { router.back(); return true; }, []);
+  const goBack = useCallback(() => { router.replace({pathname:'/DetalleGrupo', params:{id:grupoId}}); return true; }, []);
   useFocusEffect(
     useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', goBack);

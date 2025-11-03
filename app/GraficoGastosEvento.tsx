@@ -14,13 +14,21 @@ import {
   View,
   Animated,
   Easing,
+  BackHandler,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import axios from "axios";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { BarChart, PieChart } from "react-native-chart-kit";
+import { BarChart as RNCKBarChart, PieChart } from "react-native-chart-kit";
 import { useFocusEffect } from "@react-navigation/native";
 import { LinearGradient } from "expo-linear-gradient";
+
+/* ======= Fix de TS para formatYLabel en BarChart ======= */
+type BarChartPropsFix = React.ComponentProps<typeof RNCKBarChart> & {
+  formatYLabel?: (val: string) => string;
+};
+const BarChartFixed =
+  RNCKBarChart as unknown as React.ComponentType<BarChartPropsFix>;
 
 /* ======= PALETA LedgerTeal ======= */
 const PRIMARY = "#0EA5A4";
@@ -147,6 +155,20 @@ export default function GraficoGastosEvento() {
     resumenOpacity.setValue(0);
     Animated.stagger(120, [anim(resumenOpacity), anim(saldosOpacity)]).start();
   }, [saldosOpacity, resumenOpacity]);
+
+  /* ======= BackHandler (fuera de fetchData) ======= */
+  useFocusEffect(
+    useCallback(() => {
+      const onBack = () => {
+        router.replace({
+          pathname: "/DetalleGrupo",
+          params: { id, nombre },
+        });
+        return true;
+      };
+      BackHandler.addEventListener("hardwareBackPress", onBack);
+    }, [id, nombre])
+  );
 
   /* ======= FETCH DATA ======= */
   const fetchData = useCallback(async () => {
@@ -335,7 +357,10 @@ export default function GraficoGastosEvento() {
       >
         {/* fila superior: back — brand — refresh */}
         <View style={styles.heroTopRow}>
-          <Pressable onPress={() => router.back()} style={styles.heroIconBtn} hitSlop={8}>
+          <Pressable onPress={() => router.replace({
+          pathname: "/DetalleGrupo",
+          params: { id, nombre },
+        })} style={styles.heroIconBtn} hitSlop={8}>
             <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
           </Pressable>
 
@@ -414,7 +439,7 @@ export default function GraficoGastosEvento() {
 
         <Text style={styles.cardSub}>Pagadores (monto)</Text>
         {barData.datasets[0].data.length > 0 ? (
-          <BarChart
+          <BarChartFixed
             width={chartWidth}
             height={chartHeight}
             data={barData}
@@ -432,8 +457,7 @@ export default function GraficoGastosEvento() {
             }}
             formatYLabel={(val: string) => `${fmtMiles(Number(val))} CLP`}
             style={{ borderRadius: 12, alignSelf: "center", marginTop: 8 }}
-            verticalLabelRotation={0}
-          />
+            verticalLabelRotation={0} yAxisLabel={""} yAxisSuffix={""}          />
         ) : (
           <Text style={styles.emptyInfo}>No hay datos suficientes.</Text>
         )}
@@ -520,7 +544,10 @@ export default function GraficoGastosEvento() {
       </View>
 
       {/* ======= Volver ======= */}
-      <Pressable onPress={() => router.back()} style={styles.backBtn}>
+      <Pressable onPress={() =>         router.replace({
+          pathname: "/DetalleGrupo",
+          params: { id, nombre },
+        })} style={styles.backBtn}>
         <MaterialCommunityIcons name="arrow-left" size={20} color="#fff" />
         <Text style={styles.backBtnText}>Volver al grupo</Text>
       </Pressable>
@@ -599,7 +626,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 8,
   },
-heroSubtitle: {
+  heroSubtitle: {
     color: "rgba(255,255,255,0.9)",
     marginTop: 12,
     fontWeight: "700",
@@ -640,7 +667,7 @@ heroSubtitle: {
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
-    alignItems: "center", // centra icono y textos
+    alignItems: "center",
   },
   miniIconWrap: {
     width: 28,

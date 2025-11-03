@@ -681,24 +681,24 @@ export default function DetalleGrupo() {
 
             <Pressable
               onPress={goConfirmacionInvitados}
-              disabled={estaCerrado}
+
               style={({ pressed }) => [
                 styles.gridActionCard,
-                pressed && !estaCerrado && styles.gridActionCardPressed,
-                estaCerrado && styles.gridActionCardDisabled
+                pressed && styles.gridActionCardPressed,
+                
               ]}
             >
-              <View style={[styles.gridActionIcon, estaCerrado && styles.gridActionIconDisabled]}>
+              <View style={[styles.gridActionIcon]}>
                 <MaterialCommunityIcons 
                   name="account-group" 
                   size={26} 
-                  color={estaCerrado ? '#94A3B8' : PRIMARY} 
+                  color={PRIMARY} 
                 />
               </View>
-              <Text style={[styles.gridActionTitle, estaCerrado && styles.gridActionTitleDisabled]}>
+              <Text style={[styles.gridActionTitle]}>
                 Participantes
               </Text>
-              <Text style={[styles.gridActionDesc, estaCerrado && styles.gridActionDescDisabled]}>
+              <Text style={[styles.gridActionDesc]}>
                 Ver invitados
               </Text>
             </Pressable>
@@ -711,22 +711,21 @@ export default function DetalleGrupo() {
               disabled={estaCerrado}
               style={({ pressed }) => [
                 styles.gridActionCard,
-                styles.gridActionCardPrimary,
-                pressed && !estaCerrado && styles.gridActionCardPrimaryPressed,
+                pressed && !estaCerrado && styles.gridActionCardPressed,
                 estaCerrado && styles.gridActionCardDisabled
               ]}
             >
-              <View style={[styles.gridActionIconPrimary, estaCerrado && styles.gridActionIconDisabledPrimary]}>
+              <View style={[styles.gridActionIcon, estaCerrado && styles.gridActionIconDisabled]}>
                 <MaterialCommunityIcons 
                   name="plus-circle" 
                   size={26} 
-                  color={estaCerrado ? '#94A3B8' : '#fff'} 
+                  color={estaCerrado ? '#94A3B8' : PRIMARY} 
                 />
               </View>
-              <Text style={[styles.gridActionTitlePrimary, estaCerrado && styles.gridActionTitleDisabledPrimary]}>
+              <Text style={[styles.gridActionTitle, estaCerrado && styles.gridActionTitleDisabled]}>
                 Nuevo Gasto
               </Text>
-              <Text style={[styles.gridActionDescPrimary, estaCerrado && styles.gridActionDescDisabledPrimary]}>
+              <Text style={[styles.gridActionDesc, estaCerrado && styles.gridActionDescDisabled]}>
                 Registrar gasto
               </Text>
             </Pressable>
@@ -756,7 +755,7 @@ export default function DetalleGrupo() {
                 {estaCerrado ? 'Cerrado' : 'Cerrar'}
               </Text>
               <Text style={[styles.gridActionDesc, (estaCerrado || cerrandoGrupo) && styles.gridActionDescDisabled]}>
-                {estaCerrado ? 'Finalizado' : 'Finalizar grupo'}
+                {estaCerrado ? 'Cerrado' : 'Cerrar grupo'}
               </Text>
             </Pressable>
           </View>

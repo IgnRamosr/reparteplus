@@ -1,12 +1,13 @@
 // app/MenuPrincipal.tsx
 import React, { useCallback } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View, Dimensions, Platform } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View, Dimensions, Platform, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { authSignOut } from '../lib/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { borrarIDparticipante } from '@/lib/funcionesParticipante';
 import { LinearGradient } from 'expo-linear-gradient';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const { width } = Dimensions.get('window');
 
@@ -32,325 +33,459 @@ export default function MenuPrincipal() {
   }, []);
 
   return (
-    <View style={estilos.container}>
-      {/* Gradiente de fondo decorativo */}
-      <LinearGradient
-        colors={['#0EA5A4', '#14B8A6', '#10B981']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={estilos.headerGradient}
-      />
-      
-      {/* Header mejorado */}
-      <View style={estilos.header}>
-        <View style={estilos.logoContainer}>
-          <View style={estilos.logoCircle}>
-            <MaterialCommunityIcons name="share-variant" size={32} color="#fff" />
+    <SafeAreaView style={estilos.container} edges={['top']}>
+      <ScrollView
+        style={estilos.scrollView}
+        contentContainerStyle={estilos.scrollContent}
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+      >
+        {/* Header con gradiente ultra premium */}
+        <LinearGradient
+          colors={['#0EA5A4', '#14B8A6', '#10B981']}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={estilos.headerGradient}
+        >
+          <View style={estilos.headerContent}>
+            {/* Top bar */}
+            <View style={estilos.headerTop}>
+              <View style={estilos.logoContainer}>
+                <View style={estilos.logoCircle}>
+                  <MaterialCommunityIcons name="share-variant" size={30} color="#fff" />
+                </View>
+                <View style={estilos.brandInfo}>
+                  <Text style={estilos.titulo}>Reparte+</Text>
+                  <Text style={estilos.subtitulo}>Gestiona tus gastos grupales</Text>
+                </View>
+              </View>
+
+              <Pressable
+                onPress={handleLogout}
+                style={({ pressed }) => [
+                  estilos.logoutBtn,
+                  pressed && estilos.logoutBtnPressed
+                ]}
+                hitSlop={12}
+              >
+                <MaterialCommunityIcons name="logout" size={22} color="#fff" />
+              </Pressable>
+            </View>
+
+            {/* Decorative wave pattern */}
+            <View style={estilos.wavePattern}>
+              <View style={estilos.waveDot} />
+              <View style={[estilos.waveDot, { opacity: 0.7 }]} />
+              <View style={[estilos.waveDot, { opacity: 0.4 }]} />
+            </View>
           </View>
-          <View>
-            <Text style={estilos.titulo}>Reparte+</Text>
-            <Text style={estilos.subtitulo}>Gestiona tus gastos grupales</Text>
+        </LinearGradient>
+
+        {/* Main content con mejor espaciado */}
+        <View style={estilos.mainContent}>
+          {/* Botón principal destacado con diseño hero */}
+          <View style={estilos.heroSection}>
+            <Pressable
+              onPress={() => router.push('/CreacionGrupos')}
+              style={({ pressed }) => [
+                estilos.heroPressable,
+                pressed && estilos.heroPressed
+              ]}
+            >
+              <LinearGradient
+                colors={['#0EA5A4', '#14B8A6']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={estilos.heroButton}
+              >
+                <View style={estilos.heroIconContainer}>
+                  <View style={estilos.heroIconCircle}>
+                    <MaterialCommunityIcons name="account-group-outline" size={28} color="#fff" />
+                  </View>
+                </View>
+                <View style={estilos.heroTextContainer}>
+                  <Text style={estilos.heroTitle}>Crear grupo</Text>
+                  <Text style={estilos.heroDescription}>Inicia un nuevo grupo de gastos</Text>
+                </View>
+                <View style={estilos.heroArrow}>
+                  <MaterialCommunityIcons name="arrow-right" size={24} color="#fff" />
+                </View>
+              </LinearGradient>
+            </Pressable>
+          </View>
+
+          {/* Botones secundarios refinados */}
+          <View style={estilos.actionsSection}>
+            {/* Pagar saldo pendiente */}
+            <Pressable
+              onPress={() => router.replace('/PagarSaldoPendiente')}
+              style={({ pressed }) => [
+                estilos.actionCard,
+                pressed && estilos.actionCardPressed
+              ]}
+            >
+              <View style={estilos.actionCardContent}>
+                <View style={estilos.actionIconWrapper}>
+                  <MaterialCommunityIcons name="cash-multiple" size={26} color={PRIMARY} />
+                </View>
+                <View style={estilos.actionTextWrapper}>
+                  <Text style={estilos.actionTitle}>Pagar saldo pendiente</Text>
+                  <Text style={estilos.actionDescription}>Registra deudas pendientes</Text>
+                </View>
+                <View style={estilos.actionChevron}>
+                  <MaterialCommunityIcons name="chevron-right" size={22} color="#CBD5E1" />
+                </View>
+              </View>
+            </Pressable>
+
+            {/* Ver todos los grupos */}
+            <Pressable
+              onPress={() => router.replace('/VerTodosLosGrupos')}
+              style={({ pressed }) => [
+                estilos.actionCard,
+                pressed && estilos.actionCardPressed
+              ]}
+            >
+              <View style={estilos.actionCardContent}>
+                <View style={estilos.actionIconWrapper}>
+                  <MaterialCommunityIcons name="view-grid-outline" size={26} color={PRIMARY} />
+                </View>
+                <View style={estilos.actionTextWrapper}>
+                  <Text style={estilos.actionTitle}>Ver todos los grupos</Text>
+                  <Text style={estilos.actionDescription}>Administra tus grupos</Text>
+                </View>
+                <View style={estilos.actionChevron}>
+                  <MaterialCommunityIcons name="chevron-right" size={22} color="#CBD5E1" />
+                </View>
+              </View>
+            </Pressable>
+
+            {/* Escanear QR */}
+            <Pressable
+              onPress={() => router.replace('/EscanearQR')}
+              style={({ pressed }) => [
+                estilos.actionCard,
+                pressed && estilos.actionCardPressed
+              ]}
+            >
+              <View style={estilos.actionCardContent}>
+                <View style={estilos.actionIconWrapper}>
+                  <MaterialCommunityIcons name="qrcode-scan" size={26} color={PRIMARY} />
+                </View>
+                <View style={estilos.actionTextWrapper}>
+                  <Text style={estilos.actionTitle}>Escanear QR de grupo</Text>
+                  <Text style={estilos.actionDescription}>Únete rápidamente a un grupo</Text>
+                </View>
+                <View style={estilos.actionChevron}>
+                  <MaterialCommunityIcons name="chevron-right" size={22} color="#CBD5E1" />
+                </View>
+              </View>
+            </Pressable>
           </View>
         </View>
 
-        {/* Ícono cerrar sesión con mejor posicionamiento */}
-        <Pressable
-          onPress={handleLogout}
-          style={({ pressed }) => [
-            estilos.logoutBtn, 
-            pressed && estilos.logoutBtnPressed
-          ]}
-          hitSlop={10}
-          android_ripple={{ color: 'rgba(255,255,255,0.2)', borderless: true }}
-          accessibilityLabel="Cerrar sesión"
-        >
-          <MaterialCommunityIcons name="logout" size={24} color="#fff" />
-        </Pressable>
-      </View>
-
-      {/* Contenedor de botones con mejor espaciado */}
-      <View style={estilos.buttonsContainer}>
-        {/* Crear grupo - Botón Principal con gradiente */}
-        <Pressable
-          onPress={() => router.push('/CreacionGrupos')}
-          style={({ pressed }) => [
-            pressed && estilos.buttonScale
-          ]}
-        >
-          <LinearGradient
-            colors={['#0EA5A4', '#14B8A6']}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={estilos.botonPrimario}
-          >
-            <View style={estilos.botonIcono}>
-              <MaterialCommunityIcons name="account-group-outline" size={24} color="#fff" />
-            </View>
-            <View style={estilos.botonContent}>
-              <Text style={estilos.botonTextoPrimario}>Crear grupo</Text>
-              <Text style={estilos.botonDescripcion}>Inicia un nuevo grupo de gastos</Text>
-            </View>
-            <MaterialCommunityIcons name="chevron-right" size={24} color="#fff" style={estilos.chevron} />
-          </LinearGradient>
-        </Pressable>
-
-        {/* Pagar saldo pendiente */}
-        <Pressable
-          onPress={() => router.replace('/PagarSaldoPendiente')}
-          style={({ pressed }) => [
-            estilos.botonSecundario,
-            pressed && estilos.botonSecundarioPressed
-          ]}
-        >
-          <View style={[estilos.botonIcono, estilos.botonIconoSecundario]}>
-            <MaterialCommunityIcons name="cash-multiple" size={24} color={PRIMARY} />
+        {/* Footer elegante y minimalista */}
+        <View style={estilos.footer}>
+          <View style={estilos.footerDivider} />
+          <Text style={estilos.footerText}>Divide gastos de manera inteligente</Text>
+          <View style={estilos.footerDecoration}>
+            <View style={estilos.footerDot} />
+            <View style={[estilos.footerDot, { opacity: 0.5 }]} />
+            <View style={[estilos.footerDot, { opacity: 0.25 }]} />
           </View>
-          <View style={estilos.botonContent}>
-            <Text style={estilos.botonTextoSecundario}>Pagar saldo pendiente</Text>
-            <Text style={estilos.botonDescripcionSec}>Salda tus deudas pendientes</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color={PRIMARY} style={estilos.chevron} />
-        </Pressable>
-
-        {/* Ver todos los grupos */}
-        <Pressable
-          onPress={() => router.replace('/VerTodosLosGrupos')}
-          style={({ pressed }) => [
-            estilos.botonSecundario,
-            pressed && estilos.botonSecundarioPressed
-          ]}
-        >
-          <View style={[estilos.botonIcono, estilos.botonIconoSecundario]}>
-            <MaterialCommunityIcons name="view-grid-outline" size={24} color={PRIMARY} />
-          </View>
-          <View style={estilos.botonContent}>
-            <Text style={estilos.botonTextoSecundario}>Ver todos los grupos</Text>
-            <Text style={estilos.botonDescripcionSec}>Administra tus grupos</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color={PRIMARY} style={estilos.chevron} />
-        </Pressable>
-      </View>
-
-        {/* Ver todos los grupos */}
-        <Pressable
-          onPress={() => router.replace('/EscanearQR')}
-          style={({ pressed }) => [
-            estilos.botonSecundario,
-            pressed && estilos.botonSecundarioPressed
-          ]}
-        >
-          <View style={[estilos.botonIcono, estilos.botonIconoSecundario]}>
-            <MaterialCommunityIcons name="qrcode-scan" size={24} color={PRIMARY} />
-          </View>
-          <View style={estilos.botonContent}>
-            <Text style={estilos.botonTextoSecundario}>Escanear QR de grupo</Text>
-            <Text style={estilos.botonDescripcionSec}>Unete rápidamente a un grupo</Text>
-          </View>
-          <MaterialCommunityIcons name="chevron-right" size={24} color={PRIMARY} style={estilos.chevron} />
-        </Pressable>
-
-      {/* Footer decorativo */}
-      <View style={estilos.footer}>
-        <View style={estilos.footerLine} />
-        <Text style={estilos.footerText}>Divide gastos de manera inteligente</Text>
-      </View>
-    </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
-// ====== ESTILOS MEJORADOS ======
+// ====== ESTILOS ULTRA REFINADOS ======
 const PRIMARY = '#0EA5A4';
 const SECONDARY = '#14B8A6';
-const BG = '#F8FBFC';
+const BG = '#F8FAFC';
 const CARD = '#FFFFFF';
 const TEXT_PRIMARY = '#1F2937';
 const TEXT_SECONDARY = '#6B7280';
 const BORDER = '#E5E7EB';
 
 const estilos = StyleSheet.create({
-  container: { 
-    flex: 1, 
+  container: {
+    flex: 1,
     backgroundColor: BG,
   },
-  
-  // Header con gradiente
-  headerGradient: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 280,
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
+  scrollView: {
+    flex: 1,
   },
-  
-  header: { 
-    paddingTop: Platform.OS === 'ios' ? 60 : 40,
-    paddingHorizontal: 24,
+  scrollContent: {
+    flexGrow: 1,
     paddingBottom: 40,
+  },
+
+  // ===== HEADER ULTRA PREMIUM =====
+  headerGradient: {
+    paddingTop: Platform.OS === 'ios' ? 16 : 24,
+    paddingBottom: 48,
+    borderBottomLeftRadius: 36,
+    borderBottomRightRadius: 36,
+    ...Platform.select({
+      ios: {
+        shadowColor: PRIMARY,
+        shadowOpacity: 0.35,
+        shadowRadius: 24,
+        shadowOffset: { width: 0, height: 12 },
+      },
+      android: {
+        elevation: 16,
+      },
+    }),
+  },
+  headerContent: {
+    paddingHorizontal: 22,
+    gap: 28,
+  },
+  headerTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
-  
   logoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 14,
   },
-  
   logoCircle: {
     width: 56,
     height: 56,
-    borderRadius: 28,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.35)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.15,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
-  
-  titulo: { 
-    fontSize: 32, 
-    fontWeight: '800', 
+  brandInfo: {
+    gap: 3,
+  },
+  titulo: {
+    fontSize: 30,
+    fontWeight: '900',
     color: '#fff',
-    letterSpacing: -0.5,
+    letterSpacing: -0.8,
   },
-  
-  subtitulo: { 
-    fontSize: 14, 
-    fontWeight: '500', 
+  subtitulo: {
+    fontSize: 13,
+    fontWeight: '600',
     color: 'rgba(255,255,255,0.9)',
-    marginTop: 2,
+    letterSpacing: 0.1,
   },
-  
-  logoutBtn: { 
-    padding: 12,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-  },
-  
-  logoutBtnPressed: { 
-    backgroundColor: 'rgba(255,255,255,0.3)',
-    transform: [{ scale: 0.95 }],
-  },
-
-  // Contenedor de botones
-  buttonsContainer: {
-    flex: 1,
-    paddingHorizontal: 20,
-    marginTop: -20,
-  },
-  
-  // Botón primario con gradiente
-  botonPrimario: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: PRIMARY,
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    shadowColor: PRIMARY,
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
-  },
-  
-  buttonScale: {
-    transform: [{ scale: 0.98 }],
-  },
-  
-  // Botones secundarios
-  botonSecundario: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: CARD,
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1.5,
-    borderColor: BORDER,
-    shadowColor: '#000',
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
-  },
-  
-  botonSecundarioPressed: {
-    backgroundColor: '#F0FDFA',
-    borderColor: PRIMARY,
-    transform: [{ scale: 0.98 }],
-  },
-  
-  // Iconos de botones
-  botonIcono: {
-    width: 48,
-    height: 48,
+  logoutBtn: {
+    width: 44,
+    height: 44,
     borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
-  
-  botonIconoSecundario: {
-    backgroundColor: '#E6FFFA',
+  logoutBtnPressed: {
+    backgroundColor: 'rgba(255,255,255,0.35)',
+    transform: [{ scale: 0.92 }],
   },
-  
-  // Contenido del botón
-  botonContent: {
-    flex: 1,
+
+  // Wave pattern decorativo
+  wavePattern: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 8,
   },
-  
-  botonTextoPrimario: { 
-    color: '#fff', 
-    fontSize: 17, 
-    fontWeight: '700',
-    letterSpacing: -0.2,
+  waveDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#fff',
   },
-  
-  botonTextoSecundario: { 
-    color: TEXT_PRIMARY, 
-    fontSize: 16, 
-    fontWeight: '600',
-    letterSpacing: -0.2,
+
+  // ===== MAIN CONTENT =====
+  mainContent: {
+    paddingHorizontal: 20,
+    marginTop: -28,
+    gap: 20,
   },
-  
-  botonDescripcion: {
-    color: 'rgba(255,255,255,0.85)',
-    fontSize: 13,
-    marginTop: 2,
+
+  // ===== HERO BUTTON (Crear grupo) =====
+  heroSection: {
+    marginBottom: 8,
   },
-  
-  botonDescripcionSec: {
-    color: TEXT_SECONDARY,
-    fontSize: 13,
-    marginTop: 2,
+  heroPressable: {
+    borderRadius: 24,
+    overflow: 'hidden',
   },
-  
-  chevron: {
-    opacity: 0.6,
+  heroPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.95,
   },
-  
-  // Footer
-  footer: {
-    paddingHorizontal: 24,
-    paddingBottom: 30,
+  heroButton: {
+    flexDirection: 'row',
     alignItems: 'center',
+    padding: 22,
+    gap: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: PRIMARY,
+        shadowOpacity: 0.4,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 10 },
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
   },
-  
-  footerLine: {
-    width: 40,
+  heroIconContainer: {
+    marginRight: 4,
+  },
+  heroIconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  heroTextContainer: {
+    flex: 1,
+    gap: 4,
+  },
+  heroTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#fff',
+    letterSpacing: -0.3,
+  },
+  heroDescription: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: 'rgba(255,255,255,0.9)',
+    lineHeight: 19,
+  },
+  heroArrow: {
+    opacity: 0.9,
+  },
+
+  // ===== ACTION CARDS (Botones secundarios) =====
+  actionsSection: {
+    gap: 12,
+  },
+  actionCard: {
+    backgroundColor: CARD,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: BORDER,
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
+  },
+  actionCardPressed: {
+    backgroundColor: '#F0FDFA',
+    borderColor: PRIMARY,
+    transform: [{ scale: 0.98 }],
+    ...Platform.select({
+      ios: {
+        shadowOpacity: 0.08,
+      },
+      android: {
+        elevation: 5,
+      },
+    }),
+  },
+  actionCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 18,
+    gap: 14,
+  },
+  actionIconWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: '#F0FDFA',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionTextWrapper: {
+    flex: 1,
+    gap: 3,
+  },
+  actionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: TEXT_PRIMARY,
+    letterSpacing: -0.2,
+  },
+  actionDescription: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: TEXT_SECONDARY,
+    lineHeight: 18,
+  },
+  actionChevron: {
+    opacity: 0.5,
+  },
+
+  // ===== FOOTER ELEGANTE =====
+  footer: {
+    paddingHorizontal: 20,
+    paddingTop: 40,
+    paddingBottom: 10,
+    alignItems: 'center',
+    gap: 12,
+  },
+  footerDivider: {
+    width: 50,
     height: 3,
     backgroundColor: PRIMARY,
     borderRadius: 2,
-    marginBottom: 8,
-    opacity: 0.3,
+    opacity: 0.25,
   },
-  
   footerText: {
-    fontSize: 12,
+    fontSize: 13,
     color: TEXT_SECONDARY,
-    fontWeight: '500',
+    fontWeight: '600',
+    letterSpacing: 0.2,
+  },
+  footerDecoration: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 4,
+  },
+  footerDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+    backgroundColor: PRIMARY,
   },
 });
