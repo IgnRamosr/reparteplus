@@ -33,7 +33,12 @@
         }
       ],
       "expo-sqlite",
+<<<<<<< HEAD
       "expo-asset" 
+=======
+      "expo-asset",
+      "expo-secure-store"
+>>>>>>> origin/ramaSeba
     ],
     "experiments": {
       "typedRoutes": true
