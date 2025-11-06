@@ -43,23 +43,44 @@ const apiGrupo = axios.create({
   headers: { 'Cache-Control': 'no-cache' },
 });
 
+/* ====== Dinero (minor → major) ====== */
+const CURRENCY_DECIMALS: Record<string, number> = {
+  CLP: 0, USD: 2, EUR: 2, ARS: 2, BRL: 2, MXN: 2, COP: 2, PEN: 2
+};
+function getDecimals(moneda?: string, fallback?: number) {
+  if (typeof fallback === 'number') return fallback;
+  return CURRENCY_DECIMALS[String(moneda || '').toUpperCase()] ?? 0;
+}
+function toMajorUnits(minor: number, decimals: number) {
+  return decimals > 0 ? minor / Math.pow(10, decimals) : minor;
+}
+function formatMoney(minor: number | string, moneda = 'CLP', decOverride?: number) {
+  const dec = getDecimals(moneda, decOverride);
+  const n = Number(minor ?? 0);
+  if (Number.isNaN(n)) return '—';
+  const major = toMajorUnits(n, dec);
+  return major.toLocaleString('es-CL', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + ` ${moneda}`;
+}
+
 /* ====== Tipos ====== */
 type Fila = { id: string; nombre: string; pendiente: string; pagado: boolean };
+
 type GastoDetalleResp = {
   gasto: {
     id: string | number;
     grupo_id: string | number;
     descripcion: string;
     moneda: string;
-    monto_total: number;
+    monto_total: number;   // MINOR
+    decimales?: number;
     fecha_registro?: string;
   };
   integrantes: Array<{
     participante_id: string | number;
     nombre: string;
-    monto_asignado: number;
-    monto_pagado: number;
-    pendiente: number;
+    monto_asignado: number; // MINOR
+    monto_pagado: number;   // MINOR
+    pendiente: number;      // MINOR
     estado: boolean;
   }>;
 };
@@ -75,25 +96,34 @@ type GrupoResumen = {
 type GastoGrupo = {
   id: string | number;
   descripcion: string;
-  monto_total: number;
+  monto_total: number;   // MINOR
+  moneda?: string;
+  decimales?: number;
   fecha_registro?: string;
 };
 
 /* ====== Helpers ====== */
-const formatCLP = (n: number | string) => `${Intl.NumberFormat('es-CL').format(Number(n || 0))} CLP`;
 const formatFecha = (iso?: string | null) =>
   iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('es-CL') : '—';
 const escapeHtml = (s: string) =>
-  String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+           .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 const safeName = (s: string) =>
   (s || 'gasto').replace(/[^\p{L}\p{N}\-_ ]/gu, '').replace(/\s+/g, '_').slice(0, 60);
 
-/* Toma descripción robusta (igual al dashboard) */
+/** Convierte a entero base 10 (o null si no es número) */
+const toInt = (v: unknown) => {
+  const s = Array.isArray(v) ? v[0] : v;
+  const n = Number.parseInt(String(s ?? '').trim(), 10);
+  return Number.isNaN(n) ? null : n;
+};
+/** Si es numérico devuelvo número; si no, devuelvo el original (útil para pasar params sin romper) */
+const asNumberIfNumeric = (v: unknown) => {
+  const n = toInt(v);
+  return n ?? v;
+};
+
+/* Descripción robusta */
 function pickDescripcion(row: any): string {
   if (!row || typeof row !== 'object') return 'Sin descripción';
   const keys = Object.keys(row);
@@ -118,6 +148,8 @@ function mapGastos(list: any[]): GastoGrupo[] {
     id: r.id ?? r.gasto_id ?? r.uuid ?? String(i),
     descripcion: pickDescripcion(r),
     monto_total: Number(r.monto ?? r.monto_total ?? r.total ?? r.valor ?? r.precio ?? 0),
+    moneda: r.moneda ?? 'CLP',
+    decimales: r.decimales,
     fecha_registro: r.fecha ?? r.fecha_registro ?? r.created_at ?? undefined,
   }));
 }
@@ -148,9 +180,22 @@ async function loadLogoDataUri(): Promise<string | null> {
 
 /* ====== Componente ====== */
 export default function DetalleGastoScreen() {
-  const { gasto, grupoId } = useLocalSearchParams<{ gasto?: string; grupoId?: string }>();
-  const gastoId = Array.isArray(gasto) ? gasto[0] : gasto;
-  const gid = Array.isArray(grupoId) ? grupoId[0] : grupoId;
+  const { gasto, grupoId, cerrado: cerradoParam } =
+    useLocalSearchParams<{ gasto?: string; grupoId?: string; cerrado?: string }>();
+
+  // Normalizo posibles string[] de los params
+  const gastoIdRaw = Array.isArray(gasto) ? gasto[0] : gasto;
+  const gidRaw     = Array.isArray(grupoId) ? grupoId[0] : grupoId;
+
+  // Convierto a número cuando sea posible
+  const gastoIdNum = toInt(gastoIdRaw);
+  const gidNum     = toInt(gidRaw);
+
+  // Flag de cerrado forzado desde la pantalla anterior
+  const cerradoForzado =
+    typeof cerradoParam !== 'undefined'
+      ? (cerradoParam === '1' || String(cerradoParam).toLowerCase() === 'true')
+      : null;
 
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -158,15 +203,15 @@ export default function DetalleGastoScreen() {
   const [header, setHeader] = useState<{ titulo: string; total: string; id: string; grupoId?: string | number }>({
     titulo: '—',
     total: '—',
-    id: gastoId ?? '—',
-    grupoId: gid,
+    id: String(gastoIdRaw ?? '—'),
+    grupoId: gidRaw,
   });
 
   const [filas, setFilas] = useState<Fila[]>([]);
   const [grupoResumen, setGrupoResumen] = useState<GrupoResumen | null>(null);
   const [gastosGrupo, setGastosGrupo] = useState<GastoGrupo[]>([]);
 
-  const goBack = useCallback(() => { router.replace({pathname:'/DetalleGrupo', params:{id:grupoId}}); return true; }, []);
+  const goBack = useCallback(() => { router.replace({ pathname: '/DetalleGrupo', params: { id: gidRaw } }); return true; }, [gidRaw]);
   useFocusEffect(
     useCallback(() => {
       const sub = BackHandler.addEventListener('hardwareBackPress', goBack);
@@ -174,72 +219,190 @@ export default function DetalleGastoScreen() {
     }, [goBack])
   );
 
+  /* ====== Loaders ====== */
+  // ABIERTO: apiGasto '/gasto-detalle'
+  const loadAbierto = useCallback(async () => {
+    const resp = await apiGasto.get<GastoDetalleResp>('/gasto-detalle', {
+      params: { gastoId: gastoIdNum ?? gastoIdRaw }
+    });
+    if (!(resp.status >= 200 && resp.data?.gasto)) throw new Error('No se pudo cargar detalle (abierto).');
+
+    const g = resp.data.gasto;
+    const grupoIdResolved = (typeof g.grupo_id !== 'undefined' ? g.grupo_id : (gidNum ?? gidRaw));
+    const dec = getDecimals(g.moneda, g.decimales);
+
+    setHeader({
+      titulo: g.descripcion || '—',
+      total: formatMoney(g.monto_total, g.moneda, dec),
+      id: String(g.id ?? (gastoIdNum ?? gastoIdRaw)),
+      grupoId: grupoIdResolved,
+    });
+
+    setFilas(
+      (resp.data.integrantes ?? []).map((p) => ({
+        id: String(p.participante_id),
+        nombre: p.nombre,
+        pendiente: formatMoney(p.pendiente, g.moneda, dec),
+        pagado: !!p.estado,
+      }))
+    );
+
+    // Meta grupo
+    try {
+      const gr = await apiGrupo.get('/grupo', { params: { grupoId: asNumberIfNumeric(grupoIdResolved), _t: Date.now() } });
+      if (gr.status >= 200 && gr.data) setGrupoResumen(mapGrupo(gr.data, grupoIdResolved as any));
+    } catch {}
+
+    // Registro de gastos (abierto)
+    const _t = Date.now();
+    let reg: any[] = [];
+    try {
+      const r0 = await apiGasto.get('/gastos', { params: { grupoId: asNumberIfNumeric(grupoIdResolved), _t } });
+      const raw = r0?.data?.resultados ?? r0?.data;
+      if (Array.isArray(raw)) reg = raw;
+    } catch {}
+    if (!reg.length) {
+      try {
+        const r1 = await apiGrupo.get('/grupo/gastos', { params: { grupoId: asNumberIfNumeric(grupoIdResolved), _t } });
+        const raw1 = Array.isArray(r1?.data) ? r1.data : (r1?.data?.items ?? []);
+        if (Array.isArray(raw1)) reg = raw1;
+      } catch {}
+    }
+    setGastosGrupo(mapGastos(reg));
+  }, [gastoIdNum, gastoIdRaw, gidNum, gidRaw]);
+
+  // CERRADO: apiGrupo '/gasto/liquidado'
+  const loadCerrado = useCallback(async (grupoIdResolved?: string | number) => {
+    const liqParams: any = {
+      gastoId:  gastoIdNum ?? gastoIdRaw,
+      gasto_id: gastoIdNum ?? gastoIdRaw,
+      id:       gastoIdNum ?? gastoIdRaw,
+    };
+    const gidQuery = typeof grupoIdResolved !== 'undefined' ? grupoIdResolved : (gidNum ?? gidRaw);
+    if (gidQuery != null) liqParams.grupoId = asNumberIfNumeric(gidQuery);
+
+    let r: any;
+    try {
+      r = await apiGrupo.get('/gasto/liquidado', { params: liqParams });
+    } catch {
+      r = await apiGrupo.get('/gasto/liquidado', {
+        params: { gastoId: gastoIdNum ?? gastoIdRaw, gasto_id: gastoIdNum ?? gastoIdRaw, id: gastoIdNum ?? gastoIdRaw }
+      });
+    }
+
+    const g = r?.data;
+    if (!g || !(g.gasto_id || g.id)) throw new Error('No se pudo cargar detalle (cerrado).');
+
+    const gidResolved = g.grupo_id ?? gidQuery;
+
+    setHeader({
+      titulo: g.concepto || g.descripcion || '—',
+      total: formatMoney(g.monto_base_min ?? g.total_base_min ?? g.monto ?? 0, 'CLP', 0),
+      id: String(g.gasto_id ?? g.id ?? (gastoIdNum ?? gastoIdRaw)),
+      grupoId: gidResolved,
+    });
+
+    const asign = Array.isArray(g.asignaciones) ? g.asignaciones : (g.integrantes ?? []);
+    setFilas(
+      asign.map((a: any) => ({
+        id: String(a.participante_id ?? a.id ?? a.pid ?? Math.random()),
+        nombre: a.participante_nombre ?? a.nombre ?? '—',
+        pendiente: formatMoney(
+          a.pendiente_base_min ??
+          Math.max((a.asignado_base_min ?? a.asignado ?? 0) - (a.pagado_base_min ?? a.pagado ?? 0), 0),
+          'CLP',
+          0
+        ),
+        pagado: !!(a.estado ?? a.pagado_total ?? (a.pendiente_base_min === 0)),
+      }))
+    );
+
+    // Meta grupo
+    try {
+      const gr = await apiGrupo.get('/grupo', { params: { grupoId: asNumberIfNumeric(gidResolved), _t: Date.now() } });
+      if (gr.status >= 200 && gr.data) setGrupoResumen(mapGrupo(gr.data, gidResolved as any));
+    } catch {}
+
+    // Registro de gastos liquidados (CLP)
+    let reg: any[] = [];
+    try {
+      const r2 = await apiGrupo.get('/grupo/gastos-liquidados', { params: { grupoId: asNumberIfNumeric(gidResolved), _t: Date.now() } });
+      const raw = r2?.data?.gastos_liquidados ?? r2?.data ?? [];
+      reg = Array.isArray(raw) ? raw : [];
+    } catch {
+      try {
+        const r3 = await apiGrupo.get('/grupo/gastos', { params: { grupoId: asNumberIfNumeric(gidResolved), _t: Date.now() } });
+        const raw3 = Array.isArray(r3?.data) ? r3.data : (r3?.data?.items ?? []);
+        reg = Array.isArray(raw3) ? raw3 : [];
+      } catch {}
+    }
+
+    setGastosGrupo(
+      reg.map((row: any, i: number) => ({
+        id: row.gasto_id ?? row.id ?? i,
+        descripcion: row.concepto ?? row.descripcion ?? '—',
+        monto_total: Number(row.monto_base_min ?? row.total_base_min ?? row.monto ?? 0),
+        moneda: 'CLP',
+        decimales: 0,
+        fecha_registro: row.fecha ?? row.fecha_registro ?? row.created_at ?? undefined,
+      }))
+    );
+  }, [gastoIdNum, gastoIdRaw, gidNum, gidRaw]);
+
   /* ====== Carga ====== */
   useEffect(() => {
     (async () => {
-      if (!gastoId) {
+      if (gastoIdNum == null && !gastoIdRaw) {
         setLoading(false);
         Alert.alert('Falta parámetro', 'No se recibió el id del gasto.');
         return;
       }
       try {
         setLoading(true);
-        // 1) Detalle del gasto
-        const resp = await apiGasto.get<GastoDetalleResp>('/gasto-detalle', { params: { gastoId } });
-        if (resp.status >= 200 && resp.data?.gasto) {
-          const g = resp.data.gasto;
-          const grupoIdResolved = g.grupo_id ?? gid;
 
-          setHeader({
-            titulo: g.descripcion || '—',
-            total: formatCLP(g.monto_total),
-            id: String(g.id ?? gastoId),
-            grupoId: grupoIdResolved,
-          });
+        // Si el flag llega desde DetalleGrupo, úsalo directamente
+        if (cerradoForzado === true) {
+          await loadCerrado(gidNum ?? gidRaw);
+          return;
+        }
+        if (cerradoForzado === false) {
+          await loadAbierto();
+          return;
+        }
 
-          setFilas(
-            (resp.data.integrantes ?? []).map((p) => ({
-              id: String(p.participante_id),
-              nombre: p.nombre,
-              pendiente: formatCLP(p.pendiente),
-              pagado: !!p.estado,
-            }))
-          );
+        // Si NO vino flag, detecta con /grupo y, si falla, prueba abierto y cae a cerrado
+        let cerrado: boolean | null = null;
+        let grupoIdResolved: string | number | undefined = (gidNum ?? gidRaw);
 
-          // 2) META DEL GRUPO
-          let meta: any = null;
+        if (gidNum != null || gidRaw) {
           try {
-            const gr = await apiGrupo.get('/grupo', { params: { grupoId: grupoIdResolved, _t: Date.now() } });
-            if (gr.status >= 200 && gr.data) meta = gr.data;
-          } catch {}
-          setGrupoResumen(mapGrupo(meta, grupoIdResolved));
-
-          // 3) REGISTRO DE GASTOS (misma fuente del dashboard)
-          const _t = Date.now();
-          let reg: any[] = [];
-          try {
-            const r0 = await apiGasto.get('/gastos', { params: { grupoId: grupoIdResolved, _t } });
-            const raw = r0?.data?.resultados ?? r0?.data;
-            if (Array.isArray(raw)) reg = raw;
-          } catch {}
-          if (!reg.length) {
-            try {
-              const r1 = await apiGrupo.get('/grupo/gastos', { params: { grupoId: grupoIdResolved, _t } });
-              const raw1 = Array.isArray(r1?.data) ? r1.data : (r1?.data?.items ?? []);
-              if (Array.isArray(raw1)) reg = raw1;
-            } catch {}
+            const gr = await apiGrupo.get('/grupo', { params: { grupoId: asNumberIfNumeric(gidNum ?? gidRaw), _t: Date.now() } });
+            if (gr.status >= 200 && gr.data) {
+              const meta = mapGrupo(gr.data, (gidNum ?? gidRaw) as any);
+              setGrupoResumen(meta);
+              cerrado = !!meta.fecha_cierre;
+              grupoIdResolved = meta.grupo_id;
+            }
+          } catch {
+            // si falla, seguimos con heurística abajo
           }
-          setGastosGrupo(mapGastos(reg));
+        }
+
+        if (cerrado === true) {
+          await loadCerrado(grupoIdResolved);
+        } else if (cerrado === false) {
+          await loadAbierto();
         } else {
-          Alert.alert('Error', 'No se pudo cargar el detalle.');
+          try { await loadAbierto(); } catch { await loadCerrado(grupoIdResolved); }
         }
       } catch (e: any) {
-        Alert.alert('Error', e?.message || 'No se pudo cargar el detalle.');
+        const msg = e?.response?.data?.error || e?.message || 'No se pudo cargar el detalle.';
+        Alert.alert('Error', msg);
       } finally {
         setLoading(false);
       }
     })();
-  }, [gastoId, gid]);
+  }, [gastoIdNum, gastoIdRaw, gidNum, gidRaw, cerradoForzado, loadAbierto, loadCerrado]);
 
   /* ====== HTML del PDF ====== */
   const buildPdfHtml = useCallback((logoDataUri?: string | null) => {
@@ -270,7 +433,6 @@ export default function DetalleGastoScreen() {
     const nombreGrupo = grupoResumen?.nombre || '—';
     const creador = grupoResumen?.creador_nombre || '—';
     const fechaInicio = formatFecha(grupoResumen?.fecha_inicio);
-    const fechaCierre = formatFecha(grupoResumen?.fecha_cierre ?? null);
 
     const gastosGrupoHtml = (gastosGrupo ?? [])
       .sort((a, b) => {
@@ -283,7 +445,9 @@ export default function DetalleGastoScreen() {
       <tr>
         <td>${escapeHtml(g.descripcion || '—')}</td>
         <td class="center">${escapeHtml(formatFecha(g.fecha_registro))}</td>
-        <td class="right"><strong>${escapeHtml(formatCLP(g.monto_total))}</strong></td>
+        <td class="right"><strong>${
+          escapeHtml(formatMoney(g.monto_total, g.moneda ?? 'CLP', getDecimals(g.moneda, g.decimales)))
+        }</strong></td>
       </tr>`
       )
       .join('');
@@ -536,7 +700,9 @@ export default function DetalleGastoScreen() {
                   {g.descripcion}
                 </Text>
                 <Text style={[s.cellText, s.colFecha, s.center]}>{formatFecha(g.fecha_registro)}</Text>
-                <Text style={[s.cellText, s.colMonto, s.right]}>{formatCLP(g.monto_total)}</Text>
+                <Text style={[s.cellText, s.colMonto, s.right]}>
+                  {formatMoney(g.monto_total, g.moneda ?? 'CLP', getDecimals(g.moneda, g.decimales))}
+                </Text>
               </View>
             ))
         )}
@@ -553,14 +719,13 @@ export default function DetalleGastoScreen() {
 
 /* ====== Estilos ====== */
 const s = StyleSheet.create({
-
-  header: { 
-  flexDirection: 'row',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 20,
-  marginTop: Platform.OS === 'android' ? 30 : 40, // 🔥 baja el header según el dispositivo
-},
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    marginTop: Platform.OS === 'android' ? 30 : 40,
+  },
   backBtn: { backgroundColor: CARD, padding: 8, borderRadius: 12, borderWidth: 1, borderColor: BORDER },
   appTitle: { fontSize: 22, fontWeight: '800', color: PRIMARY },
 

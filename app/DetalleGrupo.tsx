@@ -12,6 +12,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import axios from 'axios';
 import { useFocusEffect } from '@react-navigation/native';
 
+/* =======================
+ *  APIs
+ * ======================= */
 const apiGrupo = axios.create({
   baseURL: 'https://ee61hfpl8e.execute-api.us-east-1.amazonaws.com/production',
   timeout: 20000,
@@ -26,6 +29,30 @@ const apiGasto = axios.create({
   validateStatus: () => true,
 });
 
+/* ===== Helpers dinero para mostrar ===== */
+const DECIMALES_POR_MONEDA: Record<string, number> = {
+  CLP: 0, JPY: 0, PYG: 0,
+  USD: 2, EUR: 2, ARS: 2, BRL: 2, MXN: 2, PEN: 2, UYU: 2, BOB: 2, COP: 2,
+  GBP: 2, CAD: 2, AUD: 2,
+};
+const decimalesDe = (codigo?: string) =>
+  DECIMALES_POR_MONEDA[(codigo || 'CLP').toUpperCase()] ??
+  ((codigo || '').toUpperCase() === 'CLP' ? 0 : 2);
+
+const deUnidadesMinimas = (entero: number, moneda?: string) => {
+  const d = decimalesDe(moneda);
+  return entero / Math.pow(10, d);
+};
+
+const formatMontoMostrar = (valor: number, moneda?: string) => {
+  const d = decimalesDe(moneda);
+  return valor.toLocaleString('es-CL', {
+    minimumFractionDigits: d,
+    maximumFractionDigits: d,
+  });
+};
+/* ====================================== */
+
 type Grupo = {
   id: string | number;
   nombre: string;
@@ -33,7 +60,7 @@ type Grupo = {
   fecha_inicio: string;
   fecha_cierre: string;
   creador?: string;
-  estado?: boolean;
+  estado?: boolean;            // true = abierto, false = cerrado
 };
 
 type Gasto = {
@@ -42,7 +69,8 @@ type Gasto = {
   pagador: string;
   estado: boolean;
   moneda?: string;
-  monto?: string | number;
+  decimales?: number;
+  monto?: number;              // ya desescalado para mostrar
 };
 
 export default function DetalleGrupo() {
@@ -77,9 +105,17 @@ export default function DetalleGrupo() {
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [loadingGastos, setLoadingGastos] = useState<boolean>(false);
 
+  // NUEVO: total del grupo en CLP (cuando cerrado)
+  const [totalGrupoCLPMin, setTotalGrupoCLPMin] = useState<number | null>(null);
+  const formatCLPFromMin = (min?: number | null) =>
+    typeof min === 'number'
+      ? min.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+      : '—';
+
   const estaCerrado = grupo?.estado === false;
   const [cerrandoGrupo, setCerrandoGrupo] = useState(false);
 
+  /* ========= carga de meta del grupo ========= */
   const fetchGrupoMeta = useCallback(async (gid: string) => {
     if (!gid) return;
     try {
@@ -88,6 +124,7 @@ export default function DetalleGrupo() {
 
       if (resp.status >= 200 && resp.status < 300 && resp.data) {
         const g = resp.data;
+        const cerrado = typeof g.estado === 'boolean' ? g.estado === false : Boolean(g.fecha_cierre);
         setGrupo({
           id: gid,
           nombre: g.nombre ?? '',
@@ -95,8 +132,11 @@ export default function DetalleGrupo() {
           fecha_inicio: g.fecha_inicio ?? '',
           fecha_cierre: g.fecha_cierre ?? '',
           creador: g.creador_nombre ?? undefined,
-          estado: typeof g.estado === 'boolean' ? g.estado : (g.fecha_cierre ? false : true),
+          estado: !cerrado,
         });
+
+        // tras conocer el estado, carga gastos con la rama correcta
+        await fetchGastos(gid, cerrado);
       } else {
         Alert.alert('Error', `(${resp.status}) No se pudo cargar el grupo.`);
       }
@@ -107,79 +147,129 @@ export default function DetalleGrupo() {
     }
   }, []);
 
-  const fetchGastos = useCallback(async (grupoId: string) => {
+  /* ========= carga de gastos (abierto o liquidado) ========= */
+  const fetchGastos = useCallback(async (grupoId: string, cerrado: boolean) => {
     if (!grupoId) return;
     try {
       setLoadingGastos(true);
-      const resp = await apiGasto.get('/gastos', { params: { grupoId } });
+
+    if (cerrado) {
+      const resp = await apiGrupo.get('/grupo/gastos-liquidados', { params: { grupoId } });
+
+
       if (resp.status >= 200 && resp.status < 300) {
-        const arr: any[] = resp.data?.resultados ?? resp.data?.gastos ?? [];
+        // 🔧 Normaliza por si llega como string
+        const payload = typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
+
+        const arr: any[] = payload?.gastos_liquidados ?? [];
         const mapped: Gasto[] = arr.map(r => ({
-          id: String(r.id ?? r.gasto_id ?? ''),
+          id: String(r.gasto_id ?? r.id ?? ''),
           concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
-          pagador: String(r.pagador ?? r.pagador_nombre ?? r.nombre_pagador ?? '—'),
-          estado: typeof r.estado === 'boolean' ? r.estado : Boolean(r.pagado ?? false),
-          moneda: r.moneda ?? 'CLP',
-          monto: r.monto ?? undefined,
+          pagador: r.pagador_nombre ?? '-',
+          estado: true,
+          moneda: 'CLP',
+          decimales: 0,
+          // r.monto_base_mayor viene en unidad MAYOR; para CLP no hay decimales
+          monto: Number(r.monto_base_mayor ?? (
+            // si tu backend devolviera _min en vez de _mayor, descomenta:
+            // typeof r.monto_base_min === 'number' ? r.monto_base_min / 1 : 0
+            0
+          )),
         }));
         setGastos(mapped);
+
+        const totalMin: number = Number(payload?.totales?.total_gastos_base_minima || 0);
+        setTotalGrupoCLPMin(totalMin);
       } else {
+        console.warn('Error /grupo/gastos-liquidados', resp.status, resp.data);
         setGastos([]);
-        console.warn('Error /gastos', resp.status, resp.data);
+        setTotalGrupoCLPMin(null);
+      }
+    }
+ else {
+        // Grupo abierto: mantén la lógica original (lambda de GASTO)
+        const resp = await apiGasto.get('/gastos', { params: { grupoId } });
+        if (resp.status >= 200 && resp.status < 300) {
+          const arr: any[] = resp.data?.resultados ?? resp.data?.gastos ?? [];
+          const mapped: Gasto[] = arr.map(r => {
+            const moneda = (r.moneda ?? 'CLP') as string;
+            const d = typeof r.decimales === 'number' ? r.decimales : decimalesDe(moneda);
+            const montoEntero = r.monto != null ? Number(r.monto) : undefined;
+            const montoMostrado = montoEntero != null ? deUnidadesMinimas(montoEntero, moneda) : undefined;
+
+            return {
+              id: String(r.id ?? r.gasto_id ?? ''),
+              concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
+              pagador: String(r.pagador ?? r.pagador_nombre ?? r.nombre_pagador ?? '—'),
+              estado: typeof r.estado === 'boolean' ? r.estado : Boolean(r.pagado ?? false),
+              moneda,
+              decimales: d,
+              monto: montoMostrado,
+            };
+          });
+          setGastos(mapped);
+          setTotalGrupoCLPMin(null);
+        } else {
+          setGastos([]);
+          setTotalGrupoCLPMin(null);
+          console.warn('Error /gastos', resp.status, resp.data);
+        }
       }
     } catch (e) {
       setGastos([]);
+      setTotalGrupoCLPMin(null);
       console.warn('Error cargando gastos', e);
     } finally {
       setLoadingGastos(false);
     }
   }, []);
 
+  /* ========= montajes ========= */
   useEffect(() => {
     if (!id) return;
     (async () => {
-      await fetchGrupoMeta(String(id));
-      await fetchGastos(String(id));
+      await fetchGrupoMeta(String(id)); // esta función ya encadena fetchGastos
     })();
-  }, [id, fetchGrupoMeta, fetchGastos]);
+  }, [id, fetchGrupoMeta]);
 
   useFocusEffect(
     useCallback(() => {
       if (!id) return;
       const t = setTimeout(() => {
         fetchGrupoMeta(String(id));
-        fetchGastos(String(id));
       }, 120);
       return () => clearTimeout(t);
-    }, [id, fetchGrupoMeta, fetchGastos])
+    }, [id, fetchGrupoMeta])
   );
 
   useFocusEffect(
     React.useCallback(() => {
       const onBack = () => {
-        router.replace({
-          pathname:"/MenuPrincipal",
-        });
+        router.replace({ pathname:"/MenuPrincipal" });
         return true;
       };
       BackHandler.addEventListener("hardwareBackPress", onBack);
     }, [])
   );
 
+  // Escucha creación de gasto (no afecta a grupo cerrado)
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('gasto:creado', (nuevo: any) => {
+      if (estaCerrado) return; // si está cerrado, la lista viene en CLP y no queremos mezclar
+      const moneda = nuevo.moneda ?? 'CLP';
       const normalizado: Gasto = {
         id: String(nuevo.id ?? nuevo.gasto_id ?? `tmp-${Date.now()}`),
         concepto: String(nuevo.concepto ?? nuevo.descripciongasto ?? '—'),
         pagador: String(nuevo.pagador ?? nuevo.pagador_nombre ?? '—'),
         estado: typeof nuevo.estado === 'boolean' ? nuevo.estado : Boolean(nuevo.pagado ?? false),
-        moneda: nuevo.moneda ?? 'CLP',
-        monto: nuevo.monto ?? undefined,
+        moneda,
+        decimales: decimalesDe(moneda),
+        monto: typeof nuevo.monto === 'number' ? Number(nuevo.monto) : undefined,
       };
       setGastos(prev => [normalizado, ...prev]);
     });
     return () => sub.remove();
-  }, []);
+  }, [estaCerrado]);
 
   const safePush = (href: Href) => router.replace(href);
 
@@ -205,9 +295,19 @@ export default function DetalleGrupo() {
     });
   };
 
-  const verGasto = (gastoId: string) => {
-    safePush({ pathname: '/detallegasto', params: { gasto: gastoId, grupoId: String(grupo?.id ?? id ?? '') } });
-  };
+
+const verGasto = (gastoId: string) => {
+  safePush({
+    pathname: '/detallegasto',
+    params: {
+      gasto: gastoId,
+      grupoId: String(grupo?.id ?? id ?? ''),
+      // forzamos el estado para no "adivinar" en la otra pantalla
+      cerrado: (grupo?.estado === false) ? '1' : '0',
+    },
+  });
+};
+
 
   const goEditarGasto = (gastoId: string) => {
     const groupId = String(grupo?.id ?? id ?? '');
@@ -245,12 +345,16 @@ export default function DetalleGrupo() {
           style: 'destructive',
           onPress: async () => {
             try {
+              setCerrandoGrupo(true);
               const resp = await apiGrupo.post('/grupo/cerrar', { grupoId: String(grupo?.id ?? id) });
               if (!(resp.status >= 200 && resp.status < 300)) {
                 throw new Error(`Backend respondió ${resp.status}`);
               }
 
+              // Marcar como cerrado y recargar gastos en CLP
               setGrupo((prev) => prev ? { ...prev, estado: false } : prev);
+              await fetchGastos(String(grupo?.id ?? id), true);
+
               DeviceEventEmitter.emit('grupo:cerrado', { grupoId: String(grupo?.id ?? id) });
               Alert.alert('Grupo cerrado', 'El grupo se ha cerrado permanentemente.');
             } catch (e: any) {
@@ -280,7 +384,7 @@ export default function DetalleGrupo() {
         setGastos(prev =>
           prev.map(g =>
             g.id === String(gastoId)
-              ? { ...g, concepto: descripciongasto, moneda, monto }
+              ? { ...g, concepto: descripciongasto, moneda, monto: Number(monto) }
               : g
           )
         );
@@ -365,7 +469,7 @@ export default function DetalleGrupo() {
 
               <Text style={styles.appTitle}>Reparte+</Text>
 
-              {/* Botones superiores mejorados - minimalistas y elegantes */}
+              {/* Botones superiores */}
               <View style={styles.headerActions}>
                 <Pressable
                   onPress={() => {
@@ -415,7 +519,6 @@ export default function DetalleGrupo() {
                 </Pressable>
 
                 <Pressable 
-                  
                   onPress={verGrafico} 
                   style={({ pressed }) => [
                     styles.headerIconBtn,
@@ -559,9 +662,9 @@ export default function DetalleGrupo() {
                           <Text style={styles.conceptText} numberOfLines={2}>
                             {item.concepto}
                           </Text>
-                          {item.monto && (
+                          {typeof item.monto === 'number' && (
                             <Text style={styles.montoText}>
-                              {item.moneda} {formatMonto(item.monto)}
+                              {estaCerrado ? 'CLP' : item.moneda} {formatMontoMostrar(item.monto, estaCerrado ? 'CLP' : item.moneda)}
                             </Text>
                           )}
                         </View>
@@ -649,9 +752,19 @@ export default function DetalleGrupo() {
               </View>
             </ScrollView>
           </View>
+
+          {/* NUEVO: total CLP del grupo cuando está cerrado */}
+          {estaCerrado && (
+            <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
+              <Text style={{ fontSize: 13, color: '#6B7280' }}>Total gastado (CLP)</Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: '#111827' }}>
+                CLP {formatCLPFromMin(totalGrupoCLPMin)}
+              </Text>
+            </View>
+          )}
         </View>
 
-        {/* Botones de acción - Grid 2x2 MINIMALISTA y LLAMATIVO */}
+        {/* Botones de acción - Grid 2x2 */}
         <View style={[styles.actionsGrid, { paddingHorizontal: cardPadding }]}>
           {/* Fila 1 */}
           <View style={styles.actionsRow}>
@@ -681,11 +794,9 @@ export default function DetalleGrupo() {
 
             <Pressable
               onPress={goConfirmacionInvitados}
-
               style={({ pressed }) => [
                 styles.gridActionCard,
                 pressed && styles.gridActionCardPressed,
-                
               ]}
             >
               <View style={[styles.gridActionIcon]}>
@@ -772,13 +883,7 @@ function fmtCL(ymd?: string) {
   return date.toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric' });
 }
 
-function formatMonto(monto: string | number): string {
-  const num = typeof monto === 'string' ? parseFloat(monto) : monto;
-  if (isNaN(num)) return '—';
-  return num.toLocaleString('es-CL', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
-/* ====== ESTILOS MEJORADOS Y RESPONSIVOS ====== */
+/* ====== ESTILOS ====== */
 const PRIMARY = '#0EA5A4';
 const SECONDARY = '#14B8A6';
 const BG = '#F3F4F6';
@@ -791,555 +896,123 @@ const DANGER = '#EF4444';
 const WARNING = '#F59E0B';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: BG,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 24,
-  },
+  container: { flex: 1, backgroundColor: BG },
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
 
-  // ===== HEADER =====
+  // HEADER
   headerGradient: {
     paddingTop: Platform.OS === 'ios' ? 16 : 24,
     paddingBottom: 32,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
     ...Platform.select({
-      ios: {
-        shadowColor: PRIMARY,
-        shadowOpacity: 0.25,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 8 },
-      },
-      android: {
-        elevation: 12,
-      },
+      ios: { shadowColor: PRIMARY, shadowOpacity: 0.25, shadowRadius: 16, shadowOffset: { width: 0, height: 8 } },
+      android: { elevation: 12 },
     }),
   },
-  headerContent: {
-    gap: 16,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  backBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  btnPressed: {
-    opacity: 0.7,
-    transform: [{ scale: 0.96 }],
-  },
-  appTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#fff',
-    letterSpacing: -0.5,
-  },
-  headerActions: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  // Botones superiores minimalistas mejorados
+  headerContent: { gap: 16 },
+  headerTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  backBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center' },
+  btnPressed: { opacity: 0.7, transform: [{ scale: 0.96 }] },
+  appTitle: { fontSize: 22, fontWeight: '800', color: '#fff', letterSpacing: -0.5 },
+  headerActions: { flexDirection: 'row', gap: 6 },
   headerIconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 11,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.25)',
+    width: 38, height: 38, borderRadius: 11, backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)',
   },
-  headerIconBtnPressed: {
-    backgroundColor: 'rgba(255,255,255,0.30)',
-    transform: [{ scale: 0.93 }],
-  },
-  headerIconBtnDisabled: {
-    opacity: 0.35,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  loadingHeader: {
-    alignItems: 'center',
-    paddingVertical: 32,
-    gap: 12,
-  },
-  loadingText: {
-    color: 'rgba(255,255,255,0.95)',
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  headerInfo: {
-    gap: 8,
-    paddingHorizontal: 4,
-  },
-  groupName: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-    letterSpacing: -0.5,
-    lineHeight: 32,
-  },
-  groupDesc: {
-    fontSize: 15,
-    color: 'rgba(255,255,255,0.95)',
-    textAlign: 'center',
-    lineHeight: 21,
-  },
-  statusBadgeContainer: {
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
-  },
-  statusBadgeOpen: {
-    backgroundColor: '#D1FAE5',
-  },
-  statusBadgeClosed: {
-    backgroundColor: '#FEE2E2',
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    fontWeight: '800',
-    letterSpacing: 0.5,
-  },
-  statusTextOpen: {
-    color: '#065F46',
-  },
-  statusTextClosed: {
-    color: '#991B1B',
-  },
+  headerIconBtnPressed: { backgroundColor: 'rgba(255,255,255,0.30)', transform: [{ scale: 0.93 }] },
+  headerIconBtnDisabled: { opacity: 0.35, backgroundColor: 'rgba(255,255,255,0.08)', borderColor: 'rgba(255,255,255,0.12)' },
+  loadingHeader: { alignItems: 'center', paddingVertical: 32, gap: 12 },
+  loadingText: { color: 'rgba(255,255,255,0.95)', fontSize: 15, fontWeight: '600' },
+  headerInfo: { gap: 8, paddingHorizontal: 4 },
+  groupName: { fontSize: 26, fontWeight: '800', color: '#fff', textAlign: 'center', letterSpacing: -0.5, lineHeight: 32 },
+  groupDesc: { fontSize: 15, color: 'rgba(255,255,255,0.95)', textAlign: 'center', lineHeight: 21 },
+  statusBadgeContainer: { alignItems: 'center', marginTop: 12 },
+  statusBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, gap: 6 },
+  statusBadgeOpen: { backgroundColor: '#D1FAE5' },
+  statusBadgeClosed: { backgroundColor: '#FEE2E2' },
+  statusBadgeText: { fontSize: 12, fontWeight: '800', letterSpacing: 0.5 },
+  statusTextOpen: { color: '#065F46' },
+  statusTextClosed: { color: '#991B1B' },
 
-  // ===== INFO CARDS =====
-  infoCardsContainer: {
-    flexDirection: 'row',
-    marginTop: -20,
-    gap: 10,
-    paddingBottom: 20,
-  },
+  // INFO CARDS
+  infoCardsContainer: { flexDirection: 'row', marginTop: -20, gap: 10, paddingBottom: 20 },
   infoCard: {
-    flex: 1,
-    backgroundColor: CARD,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: 'center',
-    gap: 6,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
-        shadowOffset: { width: 0, height: 4 },
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
+    flex: 1, backgroundColor: CARD, borderRadius: 16, padding: 14, alignItems: 'center', gap: 6,
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 12, shadowOffset: { width: 0, height: 4 } }, android: { elevation: 4 } }),
   },
-  infoCardIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: '#F0FDFA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  infoLabel: {
-    fontSize: 11,
-    color: TEXT_MUTED,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  infoValue: {
-    fontSize: 13,
-    color: TEXT,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
+  infoCardIcon: { width: 40, height: 40, borderRadius: 12, backgroundColor: '#F0FDFA', alignItems: 'center', justifyContent: 'center', marginBottom: 4 },
+  infoLabel: { fontSize: 11, color: TEXT_MUTED, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.8 },
+  infoValue: { fontSize: 13, color: TEXT, fontWeight: '700', textAlign: 'center' },
 
-  // ===== GASTOS SECTION =====
-  gastosSection: {
-    paddingTop: 8,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  sectionTitleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: TEXT,
-    letterSpacing: -0.3,
-  },
-  gastosBadge: {
-    backgroundColor: PRIMARY,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    minWidth: 36,
-    alignItems: 'center',
-  },
-  gastosBadgeText: {
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#fff',
-  },
+  // GASTOS
+  gastosSection: { paddingTop: 8 },
+  sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+  sectionTitleContainer: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  sectionTitle: { fontSize: 20, fontWeight: '800', color: TEXT, letterSpacing: -0.3 },
+  gastosBadge: { backgroundColor: PRIMARY, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, minWidth: 36, alignItems: 'center' },
+  gastosBadgeText: { fontSize: 14, fontWeight: '800', color: '#fff' },
 
-  // ===== TABLE =====
   tableCard: {
-    backgroundColor: CARD,
-    borderRadius: 18,
-    overflow: 'hidden',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 16,
-        shadowOffset: { width: 0, height: 6 },
-      },
-      android: {
-        elevation: 6,
-      },
-    }),
+    backgroundColor: CARD, borderRadius: 18, overflow: 'hidden',
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 6 } }, android: { elevation: 6 } }),
   },
-  table: {
-    minWidth: '100%',
-  },
-  tableHeader: {
-    flexDirection: 'row',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderBottomWidth: 2,
-    borderBottomColor: 'rgba(255,255,255,0.3)',
-  },
-  th: {
-    fontSize: 12,
-    fontWeight: '800',
-    color: '#fff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  tableRow: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: BORDER,
-    minHeight: 72,
-  },
-  rowEven: {
-    backgroundColor: '#F9FAFB',
-  },
-  lastRow: {
-    borderBottomWidth: 0,
-  },
-  td: {
-    justifyContent: 'center',
-  },
-  colGasto: {
-    flex: 2,
-    minWidth: 140,
-    paddingRight: 12,
-  },
-  colPagador: {
-    flex: 1.5,
-    minWidth: 120,
-    paddingRight: 12,
-  },
-  colEstado: {
-    flex: 1,
-    minWidth: 100,
-    alignItems: 'center',
-    paddingRight: 8,
-  },
-  colAcciones: {
-    flex: 1.2,
-    minWidth: 120,
-  },
-  conceptText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: TEXT,
-    lineHeight: 20,
-    marginBottom: 4,
-  },
-  montoText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: PRIMARY,
-  },
-  pagadorText: {
-    fontSize: 13,
-    color: TEXT_MUTED,
-    fontWeight: '500',
-    lineHeight: 18,
-  },
-  estadoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 16,
-    gap: 5,
-  },
-  badgePaid: {
-    backgroundColor: '#D1FAE5',
-  },
-  badgePending: {
-    backgroundColor: '#FEE2E2',
-  },
-  estadoText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  estadoPaid: {
-    color: '#047857',
-  },
-  estadoPending: {
-    color: '#DC2626',
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    gap: 6,
-    justifyContent: 'center',
-  },
-  actionBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-  },
-  actionBtnPressed: {
-    transform: [{ scale: 0.9 }],
-    opacity: 0.7,
-  },
-  actionBtnDisabled: {
-    opacity: 0.35,
-  },
-  viewBtn: {
-    backgroundColor: '#ECFDF5',
-    borderColor: '#6EE7B7',
-  },
-  editBtn: {
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FCD34D',
-  },
-  deleteBtn: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FCA5A5',
-  },
+  table: { minWidth: '100%' },
+  tableHeader: { flexDirection: 'row', paddingVertical: 16, paddingHorizontal: 16, borderBottomWidth: 2, borderBottomColor: 'rgba(255,255,255,0.3)' },
+  th: { fontSize: 12, fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.8 },
+  tableRow: { flexDirection: 'row', paddingHorizontal: 16, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: BORDER, minHeight: 72 },
+  rowEven: { backgroundColor: '#F9FAFB' },
+  lastRow: { borderBottomWidth: 0 },
+  td: { justifyContent: 'center' },
+  colGasto: { flex: 2, minWidth: 140, paddingRight: 12 },
+  colPagador: { flex: 1.5, minWidth: 120, paddingRight: 12 },
+  colEstado: { flex: 1, minWidth: 100, alignItems: 'center', paddingRight: 8 },
+  colAcciones: { flex: 1.2, minWidth: 120 },
+  conceptText: { fontSize: 14, fontWeight: '700', color: TEXT, lineHeight: 20, marginBottom: 4 },
+  montoText: { fontSize: 12, fontWeight: '600', color: PRIMARY },
+  pagadorText: { fontSize: 13, color: TEXT_MUTED, fontWeight: '500', lineHeight: 18 },
+  estadoBadge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, gap: 5 },
+  badgePaid: { backgroundColor: '#D1FAE5' },
+  badgePending: { backgroundColor: '#FEE2E2' },
+  estadoText: { fontSize: 12, fontWeight: '700' },
+  estadoPaid: { color: '#047857' },
+  estadoPending: { color: '#DC2626' },
+  actionsContainer: { flexDirection: 'row', gap: 6, justifyContent: 'center' },
+  actionBtn: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5 },
+  actionBtnPressed: { transform: [{ scale: 0.9 }], opacity: 0.7 },
+  actionBtnDisabled: { opacity: 0.35 },
+  viewBtn: { backgroundColor: '#ECFDF5', borderColor: '#6EE7B7' },
+  editBtn: { backgroundColor: '#FFFBEB', borderColor: '#FCD34D' },
+  deleteBtn: { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
 
-  // ===== EMPTY & LOADING =====
-  loadingContainer: {
-    paddingVertical: 64,
-    alignItems: 'center',
-    gap: 12,
-  },
-  loadingText2: {
-    color: TEXT_MUTED,
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  emptyState: {
-    paddingVertical: 72,
-    alignItems: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyIconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: '#F3F4F6',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: TEXT,
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  emptyDesc: {
-    fontSize: 14,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-    lineHeight: 20,
-  },
+  // EMPTY & LOADING
+  loadingContainer: { paddingVertical: 64, alignItems: 'center', gap: 12 },
+  loadingText2: { color: TEXT_MUTED, fontSize: 14, fontWeight: '500' },
+  emptyState: { paddingVertical: 72, alignItems: 'center', paddingHorizontal: 32 },
+  emptyIconContainer: { width: 96, height: 96, borderRadius: 48, backgroundColor: '#F3F4F6', alignItems: 'center', justifyContent: 'center', marginBottom: 20 },
+  emptyTitle: { fontSize: 18, fontWeight: '700', color: TEXT, marginBottom: 8, textAlign: 'center' },
+  emptyDesc: { fontSize: 14, color: TEXT_MUTED, textAlign: 'center', lineHeight: 20 },
 
-  // ===== BOTONES DE ACCIÓN - GRID 2x2 MINIMALISTA Y LLAMATIVO =====
-  actionsGrid: {
-    marginTop: 24,
-    gap: 10,
-  },
-  actionsRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
+  gridActionDescDisabled: { color: '#CBD5E1' },
+
+  // GRID acciones
+  actionsGrid: { marginTop: 24, gap: 10 },
+  actionsRow: { flexDirection: 'row', gap: 10 },
   gridActionCard: {
-    flex: 1,
-    backgroundColor: CARD,
-    borderRadius: 18,
-    padding: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-    minHeight: 140,
-    borderWidth: 1,
-    borderColor: BORDER,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.06,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 3 },
-      },
-      android: {
-        elevation: 3,
-      },
-    }),
+    flex: 1, backgroundColor: CARD, borderRadius: 18, padding: 18, alignItems: 'center',
+    justifyContent: 'center', gap: 10, minHeight: 140, borderWidth: 1, borderColor: BORDER,
+    ...Platform.select({ ios: { shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 10, shadowOffset: { width: 0, height: 3 } }, android: { elevation: 3 } }),
   },
-  gridActionCardPressed: {
-    transform: [{ scale: 0.97 }],
-    opacity: 0.85,
-  },
-  gridActionCardDisabled: {
-    opacity: 0.45,
-  },
-  gridActionCardPrimary: {
-    backgroundColor: PRIMARY,
-    borderColor: PRIMARY,
-    ...Platform.select({
-      ios: {
-        shadowColor: PRIMARY,
-        shadowOpacity: 0.3,
-        shadowRadius: 14,
-        shadowOffset: { width: 0, height: 5 },
-      },
-      android: {
-        elevation: 7,
-      },
-    }),
-  },
-  gridActionCardPrimaryPressed: {
-    backgroundColor: SECONDARY,
-    transform: [{ scale: 0.97 }],
-  },
-  gridActionCardDanger: {
-    backgroundColor: CARD,
-    borderColor: '#FEE2E2',
-    borderWidth: 1.5,
-  },
-  gridActionCardDangerPressed: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FCA5A5',
-  },
-  gridActionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#F0FDFA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gridActionIconPrimary: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.25)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gridActionIconDanger: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: '#FEF2F2',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  gridActionIconDisabled: {
-    backgroundColor: '#F8FAFC',
-  },
-  gridActionIconDisabledPrimary: {
-    backgroundColor: 'rgba(148,163,184,0.2)',
-  },
-  gridActionTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: TEXT,
-    textAlign: 'center',
-    letterSpacing: -0.3,
-  },
-  gridActionTitlePrimary: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#fff',
-    textAlign: 'center',
-    letterSpacing: -0.3,
-  },
-  gridActionTitleDanger: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: DANGER,
-    textAlign: 'center',
-    letterSpacing: -0.3,
-  },
-  gridActionTitleDisabled: {
-    color: TEXT_MUTED,
-  },
-  gridActionTitleDisabledPrimary: {
-    color: '#CBD5E1',
-  },
-  gridActionDesc: {
-    fontSize: 12,
-    color: TEXT_MUTED,
-    textAlign: 'center',
-    fontWeight: '500',
-    lineHeight: 16,
-  },
-  gridActionDescPrimary: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.85)',
-    textAlign: 'center',
-    fontWeight: '500',
-    lineHeight: 16,
-  },
-  gridActionDescDisabled: {
-    color: '#CBD5E1',
-  },
-  gridActionDescDisabledPrimary: {
-    color: 'rgba(203,213,225,0.7)',
-  },
+  gridActionCardPressed: { transform: [{ scale: 0.97 }], opacity: 0.85 },
+  gridActionCardDisabled: { opacity: 0.45 },
+  gridActionCardDanger: { backgroundColor: CARD, borderColor: '#FEE2E2', borderWidth: 1.5 },
+  gridActionCardDangerPressed: { backgroundColor: '#FEF2F2', borderColor: '#FCA5A5' },
+  gridActionIcon: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#F0FDFA', alignItems: 'center', justifyContent: 'center' },
+  gridActionIconDanger: { width: 56, height: 56, borderRadius: 16, backgroundColor: '#FEF2F2', alignItems: 'center', justifyContent: 'center' },
+  gridActionIconDisabled: { backgroundColor: '#F8FAFC' },
+  gridActionTitle: { fontSize: 15, fontWeight: '800', color: TEXT, textAlign: 'center', letterSpacing: -0.3 },
+  gridActionTitleDanger: { fontSize: 15, fontWeight: '800', color: DANGER, textAlign: 'center', letterSpacing: -0.3 },
+  gridActionTitleDisabled: { color: TEXT_MUTED },
+  gridActionDesc: { fontSize: 12, color: TEXT_MUTED, textAlign: 'center', fontWeight: '500', lineHeight: 16 },
 });

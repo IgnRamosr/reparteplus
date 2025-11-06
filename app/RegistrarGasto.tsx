@@ -25,7 +25,6 @@ import { Picker } from '@react-native-picker/picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 
-// ====== PALETA LedgerTeal ======
 const PRIMARY = '#0EA5A4';
 const BG = '#F8FBFC';
 const INK = '#0F172A';
@@ -34,15 +33,50 @@ const BORDER = '#E2E8F0';
 const CARD = '#FFFFFF';
 const DANGER = '#B91C1C';
 
-// ====== HELPERS ======
-const parseMonto = (s: string) =>
-  String(s ?? '')
-    .replace(/\./g, '')
-    .replace(/,/g, '')
-    .replace(/[^\d]/g, '');
+// Monedas demo
+const MONEDAS = [
+  { codigo: 'CLP', nombre: 'Peso chileno', decimales: 0 },
+  { codigo: 'USD', nombre: 'Dólar estadounidense', decimales: 2 },
+  { codigo: 'EUR', nombre: 'Euro', decimales: 2 },
+  { codigo: 'ARS', nombre: 'Peso argentino', decimales: 2 },
+  { codigo: 'BRL', nombre: 'Real brasileño', decimales: 2 },
+  { codigo: 'MXN', nombre: 'Peso mexicano', decimales: 2 },
+];
 
-// ------ Helpers de imagen ------
-const MAX_BYTES = 5 * 1024 * 1024; // 5MB
+function decimalesDe(codigo: string): number {
+  const m = MONEDAS.find(x => x.codigo === codigo);
+  return m ? m.decimales : (codigo === 'CLP' ? 0 : 2);
+}
+
+/** Normaliza la entrada del monto respetando la cantidad de decimales de la moneda */
+function normalizarMontoEntrada(s: string, decimales: number): string {
+  let t = String(s ?? '').replace(/[^\d.,]/g, '');
+  const lastComma = t.lastIndexOf(',');
+  const lastDot   = t.lastIndexOf('.');
+  const lastSep   = Math.max(lastComma, lastDot);
+
+  if (lastSep >= 0) {
+    const entero = t.slice(0, lastSep).replace(/[^\d]/g, '');
+    const frac   = t.slice(lastSep + 1).replace(/[^\d]/g, '');
+    const fracLim = decimales > 0 ? frac.slice(0, decimales) : '';
+    t = decimales > 0 ? `${entero}.${fracLim}` : entero;
+  } else {
+    t = t.replace(/[^\d]/g, '');
+  }
+
+  if (t.startsWith('0') && !t.startsWith('0.')) {
+    t = String(parseInt(t || '0', 10));
+  }
+  return t;
+}
+
+/** Convierte un string de input a número (usa "." como separador decimal) */
+function numberFromInput(s: string): number {
+  const n = Number(String(s).trim().replace(/\s+/g, '').replace(/\./g, '.').replace(',', '.'));
+  return Number.isFinite(n) ? n : NaN;
+}
+
+const MAX_BYTES = 5 * 1024 * 1024;
 
 async function getFileSizeBytes(uri: string): Promise<number> {
   const info = await FileSystem.getInfoAsync(uri, { size: true });
@@ -61,14 +95,12 @@ async function shrinkImageToLimit(
       ? ImageManipulator.SaveFormat.PNG
       : ImageManipulator.SaveFormat.JPEG;
 
-  // redimensionar a 1600px para bajar peso
   let result = await ImageManipulator.manipulateAsync(
     uri,
     [{ resize: { width: 1600, height: 1600 } }],
     { compress: 0.9, format: firstFormat }
   );
 
-  // comprimir en bucle hasta <5MB
   let quality = 0.85;
   let sizeBytes = await getFileSizeBytes(result.uri);
   while (sizeBytes > MAX_BYTES && quality >= 0.3) {
@@ -89,10 +121,8 @@ async function shrinkImageToLimit(
   const ext = becameJpeg ? 'jpg' : (extHint?.toLowerCase() || 'jpg');
   const contentType = becameJpeg ? 'image/jpeg' : (ext === 'png' ? 'image/png' : 'image/jpeg');
 
-  console.log('INFO imagen final =>', { bytes: sizeBytes, contentType, ext, uri: result.uri });
   return { uri: result.uri, contentType, ext };
 }
-// --------------------------------
 
 type GrupoUI = { id: string; nombre: string };
 type Participante = { participante_id: number; nombre: string; correo?: string | null };
@@ -111,15 +141,13 @@ const api2 = axios.create({
   validateStatus: () => true,
 });
 
-// ⛏️ ENDPOINTS de escaneo
 const RAW_PRESIGNED_URL_ENDPOINT =
-  'https://76qqofsw26.execute-api.us-east-1.amazonaws.com/production/presigned-url'; // POST recomendado
+  'https://76qqofsw26.execute-api.us-east-1.amazonaws.com/production/presigned-url';
 const PROCESS_IMAGE_ENDPOINT =
-  'https://pki31c24na.execute-api.us-east-1.amazonaws.com/production/imagen'; // POST { key }
+  'https://pki31c24na.execute-api.us-east-1.amazonaws.com/production/imagen';
 
 const PRESIGNED_API_KEY = process.env.EXPO_PUBLIC_PRESIGNED_API_KEY || '';
 
-// ====== Presign helpers ======
 type PresignedResp = { uploadUrl: string; key?: string; expectedContentType?: string; message?: string };
 
 async function getPresignedPreferred(endpoint: string, contentType: string, extension: string) {
@@ -163,12 +191,20 @@ async function fetchPresignedWithTrials(baseUrl: string): Promise<PresignedResp>
   throw new Error(`No se pudo obtener presigned URL.\nIntentos:\n- ${errors.join('\n- ')}`);
 }
 
-// ===================== Componente principal =====================
 export default function RegistrarGasto() {
   const { grupo } = useLocalSearchParams<{ grupo?: string | string[] }>();
   const groupIdParam = Array.isArray(grupo) ? grupo[0] : grupo ?? '';
 
-  // ===== Back a /DetalleGrupo con refresco =====
+  const [participanteId, setParticipanteId] = useState<string | null>(null);
+  useEffect(() => {
+    (async () => {
+      try {
+        const id = await AsyncStorage.getItem('participant_id');
+        if (id) setParticipanteId(id);
+      } catch {}
+    })();
+  }, []);
+
   const goBackToGroup = useCallback(() => {
     const gid = String(groupIdParam || selectedGrupoId || '');
     if (gid) {
@@ -186,18 +222,6 @@ export default function RegistrarGasto() {
     }, [goBackToGroup])
   );
 
-  // ===== participante logueado
-  const [participanteId, setParticipanteId] = useState<string | null>(null);
-  useEffect(() => {
-    (async () => {
-      try {
-        const id = await AsyncStorage.getItem('participant_id');
-        if (id) setParticipanteId(id);
-      } catch {}
-    })();
-  }, []);
-
-  // ====== Participantes y grupos ======
   const [participantes, setParticipantes] = useState<Participante[]>([]);
   const [loadingParticipantes, setLoadingParticipantes] = useState(false);
   const [pagadorId, setPagadorId] = useState<number | undefined>(undefined);
@@ -206,35 +230,30 @@ export default function RegistrarGasto() {
   const [selectedGrupoId, setSelectedGrupoId] = useState<string | undefined>(groupIdParam || undefined);
   const [loadingGrupos, setLoadingGrupos] = useState(false);
 
-  // ====== UI Form ======
   const [concepto, setConcepto] = useState('');
-  const moneda: string = 'CLP';
+  const [monedaSel, setMonedaSel] = useState<string>('CLP');
   const [monto, setMonto] = useState('');
+  const [montoError, setMontoError] = useState<string>(''); // <-- error del monto
   const [submitting, setSubmitting] = useState(false);
 
-  // ====== Cámara + Upload a S3 ======
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [pickedMime, setPickedMime] = useState<string | null>(null);
   const [pickedExt, setPickedExt] = useState<string | null>(null);
   const [scanLoading, setScanLoading] = useState(false);
   const [scanResult, setScanResult] = useState<any>(null);
 
-  // Validación de boleta
   const [isReceiptValid, setIsReceiptValid] = useState<boolean>(false);
   const [receiptWarning, setReceiptWarning] = useState<string>('');
 
-  // ====== Fecha (nuevo estado editable) ======
   const [fechaFocused, setFechaFocused] = useState(false);
-  const [fechaValor, setFechaValor] = useState(''); // aaaa-mm-dd editable
+  const [fechaValor, setFechaValor] = useState('');
 
-  // Cuando la IA detecta fecha, se sincroniza el input (normalizado a aaaa-mm-dd)
   useEffect(() => {
     if (scanResult?.date && typeof scanResult.date === 'string') {
       setFechaValor(scanResult.date.slice(0, 10));
     }
   }, [scanResult]);
 
-  // ======= NUEVO: elegir imagen desde la galería =======
   const pickFromGallery = useCallback(async () => {
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
@@ -262,7 +281,6 @@ export default function RegistrarGasto() {
       setReceiptWarning('');
     }
   }, []);
-  // ================================================
 
   const takePhoto = useCallback(async () => {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -284,7 +302,6 @@ export default function RegistrarGasto() {
     }
   }, []);
 
-  // ======= NUEVO: eliminar imagen (reset adjunto y escaneo) =======
   const removeImage = useCallback(() => {
     setImageUri(null);
     setPickedMime(null);
@@ -293,7 +310,6 @@ export default function RegistrarGasto() {
     setIsReceiptValid(false);
     setReceiptWarning('');
   }, []);
-  // ================================================================
 
   const uploadAndProcess = useCallback(async () => {
     if (!imageUri) { Alert.alert('Falta la foto', 'Primero toma una foto o elige una imagen de la galería.'); return; }
@@ -304,18 +320,15 @@ export default function RegistrarGasto() {
       setIsReceiptValid(false);
       setReceiptWarning('');
 
-      // 1) Comprimir/Redimensionar <5MB
       const shrunk = await shrinkImageToLimit(imageUri, pickedExt);
       const uploadUri = shrunk.uri;
       const wantContentType = shrunk.contentType;
       const effectiveExt = shrunk.ext;
 
-      // 2) Presigned preferido + fallback
       let presign: PresignedResp;
       try {
         presign = await getPresignedPreferred(RAW_PRESIGNED_URL_ENDPOINT, wantContentType, effectiveExt || 'jpg');
       } catch (e) {
-        console.warn('getPresignedPreferred falló, usando trials...', e);
         presign = await fetchPresignedWithTrials(RAW_PRESIGNED_URL_ENDPOINT);
       }
 
@@ -328,21 +341,16 @@ export default function RegistrarGasto() {
       }
       if (!uploadUrl || !key) throw new Error('El endpoint de presign no entregó uploadUrl o key.');
 
-      // 3) Subida a S3
       const contentType = expectedContentType || wantContentType;
       const put = await FileSystem.uploadAsync(uploadUrl, uploadUri, {
         httpMethod: 'PUT',
         headers: { 'Content-Type': contentType },
         uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
       });
-      console.log('PUT to S3 =>', put.status, (put.body || '').slice(0, 200));
       if (put.status !== 200) throw new Error(`Fallo subida S3: ${put.status}`);
 
-      // 4) Solo nombre del archivo para tu API
       const keyOnlyName = (key.split('/').pop() || key).trim();
-      console.log('DEBUG subir/leer =>', { keyEnviadoALeer: keyOnlyName, keySubido: key });
 
-      // 5) Procesar
       const processRes = await fetch(PROCESS_IMAGE_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -353,10 +361,8 @@ export default function RegistrarGasto() {
         }),
       });
       const dataText = await processRes.text();
-      console.log('PROCESS =>', processRes.status, dataText);
       if (!processRes.ok) throw new Error(`Process: ${processRes.status} ${dataText}`);
 
-      // 6) Autollenado y VALIDACIÓN de boleta
       const data = JSON.parse(dataText);
       const parsed = data?.parsed ?? data;
 
@@ -383,24 +389,26 @@ export default function RegistrarGasto() {
       setIsReceiptValid(true);
       setReceiptWarning('');
 
-      // Normalizar CLP para el input (solo dígitos)
       const totalStr = parsed?.total != null ? String(parsed.total) : '';
-      const montoAuto = totalStr.replace(/[^\d]/g, '');
-      if (montoAuto) setMonto(montoAuto);
+      const montoAuto = totalStr.replace(/[^0-9.,]/g, '');
+      if (montoAuto) {
+        const normal = normalizarMontoEntrada(montoAuto, decimalesDe(monedaSel));
+        setMonto(normal);
+        const n = numberFromInput(normal);
+        setMontoError(!Number.isFinite(n) || n <= 0 ? 'Ingresa un monto mayor a 0' : '');
+      }
 
       if (parsed?.vendor) setConcepto(String(parsed.vendor));
       if (parsed?.date) setFechaValor(String(parsed.date).slice(0, 10));
     } catch (err: any) {
-      console.error(err);
       Alert.alert('Error', err?.message || 'Error procesando la imagen.');
       setIsReceiptValid(false);
       setReceiptWarning('Ocurrió un error procesando la imagen.');
     } finally {
       setScanLoading(false);
     }
-  }, [imageUri, pickedExt]);
+  }, [imageUri, pickedExt, monedaSel]);
 
-  // --------- CARGA DE GRUPOS DESDE API ----------
   const fetchGrupos = useCallback(async () => {
     if (groupIdParam) return;
     if (!participanteId) return;
@@ -430,7 +438,6 @@ export default function RegistrarGasto() {
 
   useEffect(() => { fetchGrupos(); }, [fetchGrupos]);
 
-  // --------- CARGA DE PARTICIPANTES ----------
   const grupoActual = groupIdParam || selectedGrupoId || '';
   const fetchParticipantes = useCallback(async (grupoId: string) => {
     if (!grupoId) { setParticipantes([]); setPagadorId(undefined); return; }
@@ -459,28 +466,33 @@ export default function RegistrarGasto() {
 
   useEffect(() => { if (grupoActual) fetchParticipantes(String(grupoActual)); }, [grupoActual, fetchParticipantes]);
 
-  // --------- SUBMIT: ENVÍA GASTO ----------
   const onSubmit = useCallback(async () => {
     const grupoFinal = groupIdParam || selectedGrupoId || '';
-    const montoStr = parseMonto(monto);
     const descripcion = (concepto || '').trim();
 
     if (!grupoFinal) { Alert.alert('Revisa el formulario', 'Selecciona un grupo.'); return; }
     if (!pagadorId) { Alert.alert('Revisa el formulario', 'Selecciona el pagador.'); return; }
-    if (!descripcion || !montoStr) { Alert.alert('Revisa el formulario', '¡Completa los campos vacíos!'); return; }
+    if (!descripcion || !monto) { Alert.alert('Revisa el formulario', '¡Completa los campos vacíos!'); return; }
 
-    // Validación simple de fecha (opcional)
+    // Validación monto > 0
+    const nMonto = numberFromInput(monto);
+    if (!Number.isFinite(nMonto) || nMonto <= 0) {
+      setMontoError('Ingresa un monto mayor a 0');
+      Alert.alert('Monto inválido', 'El total debe ser un número mayor a 0.');
+      return;
+    }
+
     if (fechaValor && !/^\d{4}-\d{2}-\d{2}$/.test(fechaValor)) {
       Alert.alert('Fecha inválida', 'Usa el formato aaaa-mm-dd, por ejemplo 2025-10-06.');
       return;
     }
 
-    // Si se usó imagen, exigir validación de boleta
     if (imageUri && !isReceiptValid) {
       Alert.alert('No se puede registrar', 'La imagen no fue reconocida como boleta/factura válida. Por favor verifica.');
       return;
     }
 
+    // Enviamos "monto mostrado"; la Lambda lo convertirá a unidades mínimas
     const participante_id = (participanteId ?? '1').toString();
     const fechaEnviar =
       (fechaValor && /^\d{4}-\d{2}-\d{2}$/.test(fechaValor))
@@ -492,8 +504,8 @@ export default function RegistrarGasto() {
       participante_id,
       participantegasto_id: String(pagadorId),
       descripciongasto: descripcion,
-      moneda: 'CLP',
-      monto: montoStr,
+      moneda: monedaSel,
+      monto: Number(monto), // <-- monto visible; Lambda hace la conversión
       fecha_registro: fechaEnviar,
     };
 
@@ -508,8 +520,8 @@ export default function RegistrarGasto() {
           concepto: descripcion,
           pagador: participantes.find((p) => p.participante_id === pagadorId)?.nombre ?? '—',
           pagado: false,
-          monto: Number(montoStr),
-          moneda: 'CLP',
+          monto: Number(monto),
+          moneda: monedaSel,
         });
 
         router.replace({ pathname: '/DetalleGrupo', params: { id: String(grupoFinal), _refresh: Date.now().toString() } });
@@ -521,17 +533,33 @@ export default function RegistrarGasto() {
       const msg = e?.response?.data?.message || e?.message || 'Error enviando el gasto.';
       Alert.alert('Error', msg);
     } finally { setSubmitting(false); }
-  }, [groupIdParam, selectedGrupoId, monto, concepto, pagadorId, participanteId, submitting, participantes, imageUri, isReceiptValid, fechaValor]);
+  }, [groupIdParam, selectedGrupoId, monto, concepto, pagadorId, participanteId, submitting, participantes, imageUri, isReceiptValid, fechaValor, monedaSel]);
 
-  // ====== UI ======
-  const disableRegister = submitting || (imageUri && !isReceiptValid);
+  // invalida/valida dinámicamente cuando cambia el texto del monto
+  const onChangeMonto = useCallback((txt: string) => {
+    const norm = normalizarMontoEntrada(txt, decimalesDe(monedaSel));
+    setMonto(norm);
+    const n = numberFromInput(norm);
+    setMontoError(!Number.isFinite(n) || n <= 0 ? 'Ingresa un monto mayor a 0' : '');
+  }, [monedaSel]);
+
+  const disableRegister =
+    submitting ||
+    (imageUri && !isReceiptValid) ||
+    !!montoError ||
+    !monto;
 
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.select({ ios: 'padding', android: undefined })}>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         {/* Header */}
         <View style={s.header}>
-          <Pressable onPress={goBackToGroup} style={({ pressed }) => [s.iconBtn, pressed && s.iconPressed]} hitSlop={10} android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}>
+          <Pressable
+            onPress={goBackToGroup}
+            style={({ pressed }) => [s.iconBtn, pressed && s.iconPressed]}
+            hitSlop={10}
+            android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}
+          >
             <MaterialCommunityIcons name="arrow-left" size={24} color={INK} />
           </Pressable>
           <View style={{ alignItems: 'center', flex: 1 }}>
@@ -545,13 +573,23 @@ export default function RegistrarGasto() {
         <Text style={s.label}>Pagador</Text>
         <View style={s.pickerWrapper}>
           {loadingParticipantes ? (
-            <View style={[s.select, { justifyContent: 'center', marginBottom: 0 }]}><ActivityIndicator /></View>
+            <View style={[s.select, { justifyContent: 'center', marginBottom: 0 }]}>
+              <ActivityIndicator />
+            </View>
           ) : (
-            <Picker enabled={participantes.length > 0} selectedValue={pagadorId} onValueChange={(val) => setPagadorId(Number(val))} style={s.picker} dropdownIconColor={INK}>
+            <Picker
+              enabled={participantes.length > 0}
+              selectedValue={pagadorId}
+              onValueChange={(val) => setPagadorId(Number(val))}
+              style={s.picker}
+              dropdownIconColor={INK}
+            >
               {participantes.length === 0 ? (
-                <Picker.Item label="Sin participantes" value={undefined} color={INK} />
+                <Picker.Item label="Sin participantes" value="" color={INK} />
               ) : (
-                participantes.map((p) => <Picker.Item key={p.participante_id} label={p.nombre} value={p.participante_id} color={INK} />)
+                participantes.map((p) => (
+                  <Picker.Item key={p.participante_id} label={p.nombre} value={p.participante_id} color={INK} />
+                ))
               )}
             </Picker>
           )}
@@ -559,19 +597,19 @@ export default function RegistrarGasto() {
 
         {/* Gasto */}
         <Text style={s.label}>Gasto</Text>
-        <TextInput value={concepto} onChangeText={setConcepto} placeholder="Ej. Almuerzo" placeholderTextColor="#9AA3AF" style={s.input} />
+        <TextInput
+          value={concepto}
+          onChangeText={setConcepto}
+          placeholder="Ej. Almuerzo"
+          placeholderTextColor="#9AA3AF"
+          style={s.input}
+        />
 
         {/* Fecha */}
         <Text style={s.label}>Fecha</Text>
         <View style={[s.select, { position: 'relative' }]}>
-          {!fechaFocused && (
-            <Text style={[s.selectText, { position: 'absolute', top: 12, left: 12, color: '#0F172A' }]}>
-              {fechaValor}
-            </Text>
-          )}
-
           <TextInput
-            style={[s.selectText, { paddingLeft: 12, color: '#0F172A', opacity: fechaFocused ? 1 : 0 }]}
+            style={[s.selectText, { paddingLeft: 12, color: '#0F172A' }]}
             value={fechaValor}
             onChangeText={setFechaValor}
             placeholder="Ingrese fecha (aaaa-mm-dd)"
@@ -590,9 +628,29 @@ export default function RegistrarGasto() {
 
         {/* Moneda */}
         <Text style={s.label}>Moneda</Text>
-        <View style={s.select}>
-          <Text style={s.selectText}>{moneda}</Text>
-          <MaterialCommunityIcons name="lock-outline" size={18} color={INK} />
+        <View style={s.pickerWrapper}>
+          <Picker
+            selectedValue={monedaSel}
+            onValueChange={(val) => {
+              const dAnt = decimalesDe(monedaSel);
+              const dNue = decimalesDe(String(val));
+              setMonedaSel(String(val));
+              if (dNue !== dAnt) {
+                setMonto(prev => {
+                  const norm = normalizarMontoEntrada(prev, dNue);
+                  const n = numberFromInput(norm);
+                  setMontoError(!Number.isFinite(n) || n <= 0 ? 'Ingresa un monto mayor a 0' : '');
+                  return norm;
+                });
+              }
+            }}
+            style={s.picker}
+            dropdownIconColor={INK}
+          >
+            {MONEDAS.map(m => (
+              <Picker.Item key={m.codigo} label={`${m.nombre} (${m.codigo})`} value={m.codigo} color={INK} />
+            ))}
+          </Picker>
         </View>
 
         {/* Total + cámara/galería */}
@@ -600,37 +658,66 @@ export default function RegistrarGasto() {
         <View style={s.amountRow}>
           <TextInput
             value={monto}
-            onChangeText={setMonto}
+            onChangeText={onChangeMonto}
             placeholder="0"
             placeholderTextColor="#9AA3AF"
             style={[s.input, { flex: 1, marginBottom: 0 }]}
-            keyboardType="numeric"
-            inputMode="numeric"
+            keyboardType={Platform.select({ ios: 'decimal-pad', android: 'numeric' })}
+            inputMode="decimal"
           />
-          <Pressable onPress={takePhoto} style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]} hitSlop={8} android_ripple={{ color: 'rgba(14,165,164,0.08)' }}>
+          <Pressable
+            onPress={takePhoto}
+            style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]}
+            hitSlop={8}
+            android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+          >
             <MaterialCommunityIcons name="camera-outline" size={18} color={INK} />
           </Pressable>
-          <Pressable onPress={pickFromGallery} style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]} hitSlop={8} android_ripple={{ color: 'rgba(14,165,164,0.08)' }}>
+          <Pressable
+            onPress={pickFromGallery}
+            style={({ pressed }) => [s.camBtn, pressed && s.camBtnPressed]}
+            hitSlop={8}
+            android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+          >
             <MaterialCommunityIcons name="image-outline" size={18} color={INK} />
           </Pressable>
         </View>
+        {!!montoError && <Text style={s.errorText}>{montoError}</Text>}
 
         {/* Preview + botones procesar/eliminar */}
         {imageUri ? (
           <View style={{ gap: 10, marginBottom: 8 }}>
-            <Image source={{ uri: imageUri }} style={{ width: '100%', height: 220, borderRadius: 12, backgroundColor: '#eee' }} resizeMode="cover" />
-            <Pressable onPress={uploadAndProcess} disabled={scanLoading} style={({ pressed }) => [s.secondaryBtn, pressed && s.secondaryBtnPressed, scanLoading && { opacity: 0.6 }]} android_ripple={{ color: 'rgba(14,165,164,0.08)' }}>
-              {scanLoading ? <ActivityIndicator color={PRIMARY} /> : <Text style={s.secondaryText}>Subir y procesar boleta</Text>}
+            <Image
+              source={{ uri: imageUri }}
+              style={{ width: '100%', height: 220, borderRadius: 12, backgroundColor: '#eee' }}
+              resizeMode="cover"
+            />
+            <Pressable
+              onPress={uploadAndProcess}
+              disabled={scanLoading}
+              style={({ pressed }) => [s.secondaryBtn, pressed && s.secondaryBtnPressed, scanLoading && { opacity: 0.6 }]}
+              android_ripple={{ color: 'rgba(14,165,164,0.08)' }}
+            >
+              {scanLoading ? (
+                <ActivityIndicator color={PRIMARY} />
+              ) : (
+                <Text style={s.secondaryText}>Subir y procesar boleta</Text>
+              )}
             </Pressable>
 
-            <Pressable onPress={removeImage} disabled={scanLoading} style={({ pressed }) => [s.dangerBtn, pressed && s.dangerBtnPressed, scanLoading && { opacity: 0.6 }]} android_ripple={{ color: 'rgba(185,28,28,0.08)' }}>
+            <Pressable
+              onPress={removeImage}
+              disabled={scanLoading}
+              style={({ pressed }) => [s.dangerBtn, pressed && s.dangerBtnPressed, scanLoading && { opacity: 0.6 }]}
+              android_ripple={{ color: 'rgba(185,28,28,0.08)' }}
+            >
               <Text style={s.dangerText}>Eliminar imagen</Text>
             </Pressable>
 
             {!!receiptWarning && (
               <View style={s.warnCard}>
                 <MaterialCommunityIcons name="alert-circle-outline" size={18} color={DANGER} />
-                <Text style={s.warnText}>{receiptWarning}</Text>
+                <Text style={s.warnText}>{String(receiptWarning)}</Text>
               </View>
             )}
           </View>
@@ -640,10 +727,10 @@ export default function RegistrarGasto() {
         {scanResult ? (
           <View style={s.scanCard}>
             <Text style={{ fontWeight: '700', color: INK, marginBottom: 6 }}>Resultado IA</Text>
-            <Text style={{ color: INK }}>Vendedor: {scanResult.vendor ?? '—'}</Text>
-            <Text style={{ color: INK }}>Total: {scanResult.total ?? '—'}</Text>
-            <Text style={{ color: INK }}>Moneda: {scanResult.currency ?? 'CLP'}</Text>
-            <Text style={{ color: INK }}>Fecha: {scanResult.date ?? '—'}</Text>
+            <Text style={{ color: INK }}>Vendedor: {String(scanResult.vendor ?? '—')}</Text>
+            <Text style={{ color: INK }}>Total: {String(scanResult.total ?? '—')}</Text>
+            <Text style={{ color: INK }}>Moneda detectada: {String(scanResult.currency ?? monedaSel)}</Text>
+            <Text style={{ color: INK }}>Fecha: {String(scanResult.date ?? '—')}</Text>
           </View>
         ) : null}
 
@@ -659,7 +746,9 @@ export default function RegistrarGasto() {
           ]}
         >
           <Text style={s.primaryText}>
-            {submitting ? 'Guardando…' : (imageUri && !isReceiptValid ? 'Adjunta una boleta válida' : 'Registrar gasto')}
+            {submitting
+              ? 'Guardando…'
+              : (imageUri && !isReceiptValid ? 'Adjunta una boleta válida' : 'Registrar gasto')}
           </Text>
         </Pressable>
       </ScrollView>
@@ -679,6 +768,7 @@ const s = StyleSheet.create({
     marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05,
     shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
+  errorText: { color: DANGER, marginTop: -6, marginBottom: 8, fontSize: 12, fontWeight: '600' },
   select: {
     backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, borderRadius: 14,
     paddingVertical: 12, paddingHorizontal: 14, marginBottom: 10,
@@ -716,14 +806,13 @@ const s = StyleSheet.create({
   },
   secondaryBtnPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.985 }] },
   secondaryText: { color: INK, fontSize: 15, fontWeight: '700' },
-  // NUEVO: botón eliminar imagen (estilo peligro suave)
   dangerBtn: {
     backgroundColor: '#FFF',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#FCA5A5', // rojo claro
+    borderColor: '#FCA5A5',
     marginBottom: 12,
   },
   dangerBtnPressed: { backgroundColor: '#FEF2F2', transform: [{ scale: 0.985 }] },
