@@ -105,7 +105,7 @@ export default function DetalleGrupo() {
   const [gastos, setGastos] = useState<Gasto[]>([]);
   const [loadingGastos, setLoadingGastos] = useState<boolean>(false);
 
-  // NUEVO: total del grupo en CLP (cuando cerrado)
+  // total del grupo en CLP (cuando cerrado)
   const [totalGrupoCLPMin, setTotalGrupoCLPMin] = useState<number | null>(null);
   const formatCLPFromMin = (min?: number | null) =>
     typeof min === 'number'
@@ -135,7 +135,6 @@ export default function DetalleGrupo() {
           estado: !cerrado,
         });
 
-        // tras conocer el estado, carga gastos con la rama correcta
         await fetchGastos(gid, cerrado);
       } else {
         Alert.alert('Error', `(${resp.status}) No se pudo cargar el grupo.`);
@@ -153,41 +152,46 @@ export default function DetalleGrupo() {
     try {
       setLoadingGastos(true);
 
-    if (cerrado) {
-      const resp = await apiGrupo.get('/grupo/gastos-liquidados', { params: { grupoId } });
+      if (cerrado) {
+        const resp = await apiGrupo.get('/grupo/gastos-liquidados', { params: { grupoId } });
 
+        if (resp.status >= 200 && resp.status < 300) {
+          const payload = typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
 
-      if (resp.status >= 200 && resp.status < 300) {
-        // 🔧 Normaliza por si llega como string
-        const payload = typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
+          const arr: any[] = payload?.gastos_liquidados ?? [];
+          const mapped: Gasto[] = arr.map(r => {
+            const estado =
+              typeof r.estado === 'boolean'
+                ? r.estado
+                : (typeof r.estado_gasto === 'boolean' ? r.estado_gasto : false);
 
-        const arr: any[] = payload?.gastos_liquidados ?? [];
-        const mapped: Gasto[] = arr.map(r => ({
-          id: String(r.gasto_id ?? r.id ?? ''),
-          concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
-          pagador: r.pagador_nombre ?? '-',
-          estado: true,
-          moneda: 'CLP',
-          decimales: 0,
-          // r.monto_base_mayor viene en unidad MAYOR; para CLP no hay decimales
-          monto: Number(r.monto_base_mayor ?? (
-            // si tu backend devolviera _min en vez de _mayor, descomenta:
-            // typeof r.monto_base_min === 'number' ? r.monto_base_min / 1 : 0
-            0
-          )),
-        }));
-        setGastos(mapped);
+            // si viene _mayor lo usamos; si no, _min (CLP no tiene decimales)
+            const monto =
+              typeof r.monto_base_mayor === 'number'
+                ? Number(r.monto_base_mayor)
+                : (typeof r.monto_base_min === 'number' ? Number(r.monto_base_min) : 0);
 
-        const totalMin: number = Number(payload?.totales?.total_gastos_base_minima || 0);
-        setTotalGrupoCLPMin(totalMin);
+            return {
+              id: String(r.gasto_id ?? r.id ?? ''),
+              concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
+              pagador: r.pagador_nombre ?? '-',
+              estado,
+              moneda: 'CLP',
+              decimales: 0,
+              monto,
+            };
+          });
+          setGastos(mapped);
+
+          const totalMin: number = Number(payload?.totales?.total_gastos_base_minima || 0);
+          setTotalGrupoCLPMin(totalMin);
+        } else {
+          console.warn('Error /grupo/gastos-liquidados', resp.status, resp.data);
+          setGastos([]);
+          setTotalGrupoCLPMin(null);
+        }
       } else {
-        console.warn('Error /grupo/gastos-liquidados', resp.status, resp.data);
-        setGastos([]);
-        setTotalGrupoCLPMin(null);
-      }
-    }
- else {
-        // Grupo abierto: mantén la lógica original (lambda de GASTO)
+        // Grupo abierto: lambda de GASTO
         const resp = await apiGasto.get('/gastos', { params: { grupoId } });
         if (resp.status >= 200 && resp.status < 300) {
           const arr: any[] = resp.data?.resultados ?? resp.data?.gastos ?? [];
@@ -197,11 +201,16 @@ export default function DetalleGrupo() {
             const montoEntero = r.monto != null ? Number(r.monto) : undefined;
             const montoMostrado = montoEntero != null ? deUnidadesMinimas(montoEntero, moneda) : undefined;
 
+            const estado =
+              typeof r.estado_gasto === 'boolean'
+                ? r.estado_gasto
+                : Boolean(r.pagado ?? false);
+
             return {
               id: String(r.id ?? r.gasto_id ?? ''),
               concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
               pagador: String(r.pagador ?? r.pagador_nombre ?? r.nombre_pagador ?? '—'),
-              estado: typeof r.estado === 'boolean' ? r.estado : Boolean(r.pagado ?? false),
+              estado,
               moneda,
               decimales: d,
               monto: montoMostrado,
@@ -228,7 +237,7 @@ export default function DetalleGrupo() {
   useEffect(() => {
     if (!id) return;
     (async () => {
-      await fetchGrupoMeta(String(id)); // esta función ya encadena fetchGastos
+      await fetchGrupoMeta(String(id));
     })();
   }, [id, fetchGrupoMeta]);
 
@@ -255,7 +264,7 @@ export default function DetalleGrupo() {
   // Escucha creación de gasto (no afecta a grupo cerrado)
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener('gasto:creado', (nuevo: any) => {
-      if (estaCerrado) return; // si está cerrado, la lista viene en CLP y no queremos mezclar
+      if (estaCerrado) return;
       const moneda = nuevo.moneda ?? 'CLP';
       const normalizado: Gasto = {
         id: String(nuevo.id ?? nuevo.gasto_id ?? `tmp-${Date.now()}`),
@@ -295,19 +304,16 @@ export default function DetalleGrupo() {
     });
   };
 
-
-const verGasto = (gastoId: string) => {
-  safePush({
-    pathname: '/detallegasto',
-    params: {
-      gasto: gastoId,
-      grupoId: String(grupo?.id ?? id ?? ''),
-      // forzamos el estado para no "adivinar" en la otra pantalla
-      cerrado: (grupo?.estado === false) ? '1' : '0',
-    },
-  });
-};
-
+  const verGasto = (gastoId: string) => {
+    safePush({
+      pathname: '/detallegasto',
+      params: {
+        gasto: gastoId,
+        grupoId: String(grupo?.id ?? id ?? ''),
+        cerrado: (grupo?.estado === false) ? '1' : '0',
+      },
+    });
+  };
 
   const goEditarGasto = (gastoId: string) => {
     const groupId = String(grupo?.id ?? id ?? '');
@@ -351,7 +357,6 @@ const verGasto = (gastoId: string) => {
                 throw new Error(`Backend respondió ${resp.status}`);
               }
 
-              // Marcar como cerrado y recargar gastos en CLP
               setGrupo((prev) => prev ? { ...prev, estado: false } : prev);
               await fetchGastos(String(grupo?.id ?? id), true);
 
@@ -447,7 +452,7 @@ const verGasto = (gastoId: string) => {
         contentContainerStyle={styles.scrollContent} 
         showsVerticalScrollIndicator={false}
       >
-        {/* Header con gradiente */}
+        {/* Header */}
         <LinearGradient 
           colors={['#0EA5A4', '#14B8A6', '#10B981']} 
           start={{ x: 0, y: 0 }} 
@@ -458,10 +463,7 @@ const verGasto = (gastoId: string) => {
             <View style={styles.headerTop}>
               <Pressable 
                 onPress={() => router.replace('/VerTodosLosGrupos')} 
-                style={({ pressed }) => [
-                  styles.backBtn, 
-                  pressed && styles.btnPressed
-                ]} 
+                style={({ pressed }) => [styles.backBtn, pressed && styles.btnPressed]} 
                 hitSlop={10}
               >
                 <MaterialCommunityIcons name="arrow-left" size={24} color="#fff" />
@@ -469,7 +471,6 @@ const verGasto = (gastoId: string) => {
 
               <Text style={styles.appTitle}>Reparte+</Text>
 
-              {/* Botones superiores */}
               <View style={styles.headerActions}>
                 <Pressable
                   onPress={() => {
@@ -520,10 +521,7 @@ const verGasto = (gastoId: string) => {
 
                 <Pressable 
                   onPress={verGrafico} 
-                  style={({ pressed }) => [
-                    styles.headerIconBtn,
-                    pressed && styles.headerIconBtnPressed
-                  ]} 
+                  style={({ pressed }) => [styles.headerIconBtn, pressed && styles.headerIconBtnPressed]} 
                   hitSlop={8}
                 >
                   <MaterialCommunityIcons name="chart-box-outline" size={19} color="#fff" />
@@ -546,19 +544,13 @@ const verGasto = (gastoId: string) => {
                 </Text>
 
                 <View style={styles.statusBadgeContainer}>
-                  <View style={[
-                    styles.statusBadge,
-                    estaCerrado ? styles.statusBadgeClosed : styles.statusBadgeOpen
-                  ]}>
+                  <View style={[styles.statusBadge, estaCerrado ? styles.statusBadgeClosed : styles.statusBadgeOpen]}>
                     <MaterialCommunityIcons 
                       name={estaCerrado ? 'lock' : 'lock-open-variant'} 
                       size={14} 
                       color={estaCerrado ? '#991B1B' : '#065F46'} 
                     />
-                    <Text style={[
-                      styles.statusBadgeText,
-                      estaCerrado ? styles.statusTextClosed : styles.statusTextOpen
-                    ]}>
+                    <Text style={[styles.statusBadgeText, estaCerrado ? styles.statusTextClosed : styles.statusTextOpen]}>
                       {estaCerrado ? 'CERRADO' : 'ABIERTO'}
                     </Text>
                   </View>
@@ -676,19 +668,13 @@ const verGasto = (gastoId: string) => {
                         </View>
                         
                         <View style={[styles.td, styles.colEstado]}>
-                          <View style={[
-                            styles.estadoBadge, 
-                            isPaid ? styles.badgePaid : styles.badgePending
-                          ]}>
+                          <View style={[styles.estadoBadge, isPaid ? styles.badgePaid : styles.badgePending]}>
                             <MaterialCommunityIcons 
                               name={isPaid ? 'check-circle' : 'clock-alert-outline'} 
                               size={16} 
                               color={isPaid ? '#047857' : '#DC2626'} 
                             />
-                            <Text style={[
-                              styles.estadoText, 
-                              isPaid ? styles.estadoPaid : styles.estadoPending
-                            ]}>
+                            <Text style={[styles.estadoText, isPaid ? styles.estadoPaid : styles.estadoPending]}>
                               {isPaid ? 'Pagado' : 'Pendiente'}
                             </Text>
                           </View>
@@ -753,7 +739,7 @@ const verGasto = (gastoId: string) => {
             </ScrollView>
           </View>
 
-          {/* NUEVO: total CLP del grupo cuando está cerrado */}
+          {/* total CLP del grupo cuando está cerrado */}
           {estaCerrado && (
             <View style={{ marginTop: 12, alignItems: 'flex-end' }}>
               <Text style={{ fontSize: 13, color: '#6B7280' }}>Total gastado (CLP)</Text>
