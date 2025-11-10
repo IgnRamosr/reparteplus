@@ -166,7 +166,7 @@ export default function DetalleGrupo() {
           id: String(r.gasto_id ?? r.id ?? ''),
           concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
           pagador: r.pagador_nombre ?? '-',
-          estado: true,
+          estado: r.estado,
           moneda: 'CLP',
           decimales: 0,
           // r.monto_base_mayor viene en unidad MAYOR; para CLP no hay decimales
