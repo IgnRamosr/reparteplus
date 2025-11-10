@@ -1,17 +1,8 @@
 // app/PagarEfectivo.tsx
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Alert,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-  BackHandler,
-  DeviceEventEmitter,
+  Alert, ActivityIndicator, KeyboardAvoidingView, Platform, Pressable,
+  StyleSheet, Text, TextInput, View, BackHandler
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { router } from 'expo-router';
@@ -36,17 +27,11 @@ const TEXT_MUTED = '#64748B';
 const BORDER = '#E2E8F0';
 const CARD = '#FFFFFF';
 
-/** ====== Rounding guard (CLP, sin decimales visibles) ======
- * Todo saldo |saldo| < EPSILON_CLP se considera 0 (ajuste de redondeo)
- * Cambia a 1 si quieres ser más estricto.
- */
-const EPSILON_CLP = 10;
-
-/** ====== Types ====== */
+/** ====== Types (ajustados a liquidación) ====== */
 type Grupo = {
   grupo_id: number;
   nombre: string;
-  pendiente_total_base_minima?: number;
+  pendiente_total_base_minima?: number; // puede venir del endpoint
 };
 type Deudor = {
   participante_id: number;
@@ -66,11 +51,12 @@ type ResumenDeudor = {
 const onlyDigits = (s: string) => (s || '').replace(/[^\d]/g, '');
 const fmtMonedaVisible = (n: number, moneda: string) =>
   new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(n) + ` ${moneda}`;
-const clampSaldo = (n: number) => {
-  if (!Number.isFinite(n)) return 0;
-  return Math.abs(n) < EPSILON_CLP ? 0 : n;
-};
 
+/**
+ * Como en CLP no hay decimales visibles, y en tu UI ingresas “enteros”,
+ * mostramos y editamos el número tal cual llega del backend (unidades mínimas).
+ * Si más adelante usas USD/EUR, podrías agregar formateo con decimales visibles.
+ */
 export default function PagarEfectivo() {
   /** identidad del participante (userId) */
   const [userId, setUserId] = useState<number | null>(null);
@@ -92,7 +78,7 @@ export default function PagarEfectivo() {
   const [resumen, setResumen] = useState<ResumenDeudor | null>(null);
 
   /** formulario */
-  const [monto, setMonto] = useState<string>('');
+  const [monto, setMonto] = useState<string>(''); // abono parcial (en unidades mínimas de la moneda_base)
   const [loading, setLoading] = useState<{ grupos?: boolean; deudores?: boolean; resumen?: boolean; save?: boolean }>({});
 
   /** back físico: volver al menú */
@@ -109,14 +95,13 @@ export default function PagarEfectivo() {
   const loadGrupos = useCallback(async () => {
     if (!userId) return;
     try {
-      setLoading((s) => ({ ...s, grupos: true }));
+      setLoading(s => ({ ...s, grupos: true }));
       const resp = await api.get('/grupos-con-deuda', { params: { userId } });
       if (resp.status >= 200 && resp.status < 300) {
         setGrupos(resp.data?.grupos ?? []);
         // reset cadena
         setGrupoId(undefined);
-        setDeudores([]);
-        setDeudorId(undefined);
+        setDeudores([]); setDeudorId(undefined);
         setResumen(null);
         setMonto('');
       } else {
@@ -125,48 +110,38 @@ export default function PagarEfectivo() {
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.message || e?.message || 'No se pudieron cargar los grupos.');
     } finally {
-      setLoading((s) => ({ ...s, grupos: false }));
+      setLoading(s => ({ ...s, grupos: false }));
     }
   }, [userId]);
 
-  useEffect(() => {
-    loadGrupos();
-  }, [loadGrupos]);
+  useEffect(() => { loadGrupos(); }, [loadGrupos]);
 
   /** cuando cambia grupo => cargar deudores y reset dependientes */
   useEffect(() => {
     const fetchDeudores = async () => {
       if (!grupoId) return;
       try {
-        setLoading((s) => ({ ...s, deudores: true }));
+        setLoading(s => ({ ...s, deudores: true }));
         const resp = await api.get('/grupo-deudores', { params: { grupoId } });
         if (resp.status >= 200 && resp.status < 300) {
-          const lista: Deudor[] = (resp.data?.deudores ?? []).map((d: Deudor) => ({
-            ...d,
-            saldo_base_minima: clampSaldo(d.saldo_base_minima),
-          }));
-          // Ocultar deudores con saldo 0 (ajuste)
-          setDeudores(lista.filter((d) => d.saldo_base_minima > 0));
+          setDeudores(resp.data?.deudores ?? []);
           setDeudorId(undefined);
           setResumen(null);
           setMonto('');
         } else {
           Alert.alert('Error', resp.data?.message || 'No se pudieron cargar los integrantes con deuda.');
-          setDeudores([]);
-          setDeudorId(undefined);
+          setDeudores([]); setDeudorId(undefined);
         }
       } catch (e: any) {
         Alert.alert('Error', e?.response?.data?.message || e?.message || 'No se pudieron cargar los integrantes.');
-        setDeudores([]);
-        setDeudorId(undefined);
+        setDeudores([]); setDeudorId(undefined);
       } finally {
-        setLoading((s) => ({ ...s, deudores: false }));
+        setLoading(s => ({ ...s, deudores: false }));
       }
     };
 
     if (!grupoId) {
-      setDeudores([]);
-      setDeudorId(undefined);
+      setDeudores([]); setDeudorId(undefined);
       setResumen(null);
       setMonto('');
       return;
@@ -174,25 +149,18 @@ export default function PagarEfectivo() {
     fetchDeudores();
   }, [grupoId]);
 
-  /** cuando cambia deudor => cargar resumen y autocompletar monto con el saldo (clamp) */
+  /** cuando cambia deudor => cargar resumen de su liquidación y autocompletar monto con el saldo */
   useEffect(() => {
     const fetchResumen = async () => {
       if (!grupoId || !deudorId) return;
       try {
-        setLoading((s) => ({ ...s, resumen: true }));
-        const resp = await api.get('/grupo-deudor-gastos', {
-          params: { grupoId, participanteId: deudorId },
-        });
+        setLoading(s => ({ ...s, resumen: true }));
+        const resp = await api.get('/grupo-deudor-gastos', { params: { grupoId, participanteId: deudorId } });
         if (resp.status >= 200 && resp.status < 300) {
+          // ahora la API devuelve { resumen: { moneda_base, asignado_base_minima, pagado_base_minima, saldo_base_minima } }
           const r: ResumenDeudor | undefined = resp.data?.resumen;
-          if (r) {
-            const ajustado = { ...r, saldo_base_minima: clampSaldo(r.saldo_base_minima) };
-            setResumen(ajustado);
-            setMonto(ajustado.saldo_base_minima > 0 ? String(ajustado.saldo_base_minima) : '');
-          } else {
-            setResumen(null);
-            setMonto('');
-          }
+          setResumen(r ?? null);
+          setMonto(r ? String(r.saldo_base_minima) : '');
         } else {
           Alert.alert('Error', resp.data?.message || 'No se pudo cargar el resumen.');
           setResumen(null);
@@ -203,7 +171,7 @@ export default function PagarEfectivo() {
         setResumen(null);
         setMonto('');
       } finally {
-        setLoading((s) => ({ ...s, resumen: false }));
+        setLoading(s => ({ ...s, resumen: false }));
       }
     };
 
@@ -225,35 +193,22 @@ export default function PagarEfectivo() {
       Alert.alert('Completa el formulario', 'Selecciona Grupo e Integrante.');
       return;
     }
-
     const montoNum = Number(onlyDigits(monto));
-    const saldoActual = clampSaldo(Number(resumen?.saldo_base_minima ?? 0));
-
-    if (saldoActual === 0) {
-      Alert.alert('Listo', 'Este integrante ya está saldado (ajuste de redondeo).');
-      return;
-    }
     if (!Number.isFinite(montoNum) || montoNum <= 0) {
       Alert.alert('Monto inválido', 'La cantidad a pagar debe ser mayor a 0.');
       return;
     }
-    if (montoNum > saldoActual) {
-      Alert.alert('Monto inválido', 'El monto no puede superar el saldo pendiente.');
-      return;
-    }
 
     try {
-      setLoading((s) => ({ ...s, save: true }));
+      setLoading(s => ({ ...s, save: true }));
       const resp = await api.post('/pago-efectivo', {
         grupo_id: grupoId,
         participante_id: deudorId,
         registrado_por: userId,
-        monto: montoNum, // unidades mínimas
+        monto: montoNum, // unidades mínimas de la moneda_base
       });
 
       if (resp.status >= 200 && resp.status < 300) {
-        // refrescar pantallas escuchando este evento (tu gráfico lo escucha)
-        DeviceEventEmitter.emit('reparte:pago:registrado', { grupoId });
         Alert.alert('Éxito', 'Pago registrado correctamente.');
         router.replace('/MenuPrincipal');
       } else {
@@ -262,14 +217,12 @@ export default function PagarEfectivo() {
     } catch (e: any) {
       Alert.alert('Error', e?.response?.data?.message || e?.message || 'Error registrando el pago.');
     } finally {
-      setLoading((s) => ({ ...s, save: false }));
+      setLoading(s => ({ ...s, save: false }));
     }
   };
 
   /** moneda UI (segura) */
   const monedaUI = resumen?.moneda_base || 'CLP';
-  const saldoUI = clampSaldo(Number(resumen?.saldo_base_minima ?? 0));
-  const saldadoPorAjuste = saldoUI === 0 && resumen != null;
 
   return (
     <KeyboardAvoidingView style={s.container} behavior={Platform.select({ ios: 'padding', android: undefined })}>
@@ -288,6 +241,26 @@ export default function PagarEfectivo() {
           <Text style={s.brand}>Reparte+</Text>
           <Text style={s.title}>Pagar saldo pendiente</Text>
         </View>
+
+        {/* Botón: Aceptar pago con tarjeta */}
+        <View style={{ flexDirection: 'row' }}>
+          <Pressable
+            onPress={() =>
+              router.push({
+                pathname: './PagarTarjeta',
+                params: {
+                  grupoId: grupoId ?? '',
+                  deudorId: deudorId ?? '',
+                },
+              })
+            }
+            style={({ pressed }) => [s.iconBtn, pressed && s.iconPressed]}
+            hitSlop={10}
+            android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}
+          >
+            <MaterialCommunityIcons name="credit-card-outline" size={22} color={INK} />
+          </Pressable>
+        </View>
       </View>
 
       {/* Grupo */}
@@ -303,10 +276,12 @@ export default function PagarEfectivo() {
             dropdownIconColor={INK}
           >
             <Picker.Item label="Selecciona un grupo" value={undefined} color={INK} />
-            {grupos.map((g) => (
+            {grupos.map(g => (
               <Picker.Item
                 key={g.grupo_id}
-                label={g.nombre}
+                label={g.pendiente_total_base_minima != null
+                  ? `${g.nombre}`
+                  : g.nombre}
                 value={g.grupo_id}
                 color={INK}
               />
@@ -329,8 +304,13 @@ export default function PagarEfectivo() {
             dropdownIconColor={INK}
           >
             <Picker.Item label="Selecciona un integrante" value={undefined} color={INK} />
-            {deudores.map((d) => (
-              <Picker.Item key={d.participante_id} label={`${d.nombre}`} value={d.participante_id} color={INK} />
+            {deudores.map(d => (
+              <Picker.Item
+                key={d.participante_id}
+                label={`${d.nombre}`}
+                value={d.participante_id}
+                color={INK}
+              />
             ))}
           </Picker>
         )}
@@ -345,14 +325,9 @@ export default function PagarEfectivo() {
           <View style={s.row}>
             <Text style={[s.rowKey, { fontWeight: '800' }]}>Saldo pendiente</Text>
             <Text style={[s.rowVal, { fontWeight: '800', color: PRIMARY }]}>
-              {fmtMonedaVisible(saldoUI, monedaUI)}
+              {fmtMonedaVisible(resumen.saldo_base_minima, monedaUI)}
             </Text>
           </View>
-          {saldadoPorAjuste && (
-            <Text style={{ color: TEXT_MUTED, marginTop: 6 }}>
-              Saldado por ajuste de redondeo (≤ {EPSILON_CLP - 1} {monedaUI}).
-            </Text>
-          )}
         </View>
       ) : null}
 
@@ -367,7 +342,6 @@ export default function PagarEfectivo() {
           style={[s.input, { flex: 1, marginBottom: 0 }]}
           keyboardType="numeric"
           inputMode="numeric"
-          editable={!saldadoPorAjuste}
         />
         <View style={s.lockBadge}>
           <Text style={{ color: INK, fontWeight: '700' }}>{monedaUI}</Text>
@@ -378,12 +352,12 @@ export default function PagarEfectivo() {
       {/* Botón pagar */}
       <Pressable
         onPress={onPagar}
-        disabled={loading.save || !grupoId || !deudorId || !monto || saldadoPorAjuste}
+        disabled={loading.save || !grupoId || !deudorId || !monto}
         android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
         style={({ pressed }) => [
           s.primaryBtn,
           pressed && s.primaryBtnPressed,
-          (loading.save || !grupoId || !deudorId || !monto || saldadoPorAjuste) && { opacity: 0.6 },
+          (loading.save || !grupoId || !deudorId || !monto) && { opacity: 0.6 },
         ]}
       >
         <Text style={s.primaryText}>{loading.save ? 'Procesando…' : 'Pagar'}</Text>
@@ -396,63 +370,31 @@ export default function PagarEfectivo() {
 const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: BG, padding: 20, paddingTop: 40 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
-  brand: { fontSize: 28, fontWeight: '800', color: PRIMARY, textAlign: 'center' },
-  title: { fontSize: 18, fontWeight: '700', color: TEXT_MUTED, marginTop: 2 },
+  brand:  { fontSize: 28, fontWeight: '800', color: PRIMARY, textAlign: 'center' },
+  title:  { fontSize: 18, fontWeight: '700', color: TEXT_MUTED, marginTop: 2 },
   iconBtn: { padding: 8, borderRadius: 12 },
   iconPressed: { backgroundColor: '#F0FBFA', transform: [{ scale: 0.97 }] },
 
   label: { fontSize: 14, fontWeight: '700', color: TEXT_MUTED, marginTop: 14, marginBottom: 6 },
 
   pickerWrapper: {
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 14,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
-    position: 'relative',
+    backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, borderRadius: 14,
+    marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05,
+    shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1, position: 'relative',
   },
-  picker: {
-    width: '100%',
-    color: INK,
-    paddingVertical: 2,
-    paddingHorizontal: 4,
-    height: Platform.select({ ios: 54, android: 54 }),
-  },
+  picker: { width: '100%', color: INK, paddingVertical: 2, paddingHorizontal: 4, height: Platform.select({ ios: 54, android: 54 }) },
 
   input: {
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 14,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    fontSize: 15,
-    color: INK,
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, borderRadius: 14,
+    paddingVertical: 12, paddingHorizontal: 14, fontSize: 15, color: INK,
+    marginBottom: 10, shadowColor: '#000', shadowOpacity: 0.05,
+    shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
 
   card: {
-    backgroundColor: CARD,
-    borderWidth: 1,
-    borderColor: BORDER,
-    borderRadius: 16,
-    padding: 12,
-    marginTop: 8,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 1,
+    backgroundColor: CARD, borderWidth: 1, borderColor: BORDER, borderRadius: 16,
+    padding: 12, marginTop: 8, shadowColor: '#000', shadowOpacity: 0.05,
+    shadowRadius: 6, shadowOffset: { width: 0, height: 2 }, elevation: 1,
   },
   cardTitle: { color: TEXT_MUTED, fontWeight: '800', marginBottom: 8 },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginVertical: 2 },
@@ -461,29 +403,15 @@ const s = StyleSheet.create({
 
   amountRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   lockBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    width: 72,
-    height: 44,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: BORDER,
-    backgroundColor: CARD,
-    justifyContent: 'center',
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    width: 72, height: 44, borderRadius: 12, borderWidth: 1, borderColor: BORDER,
+    backgroundColor: CARD, justifyContent: 'center',
   },
 
   primaryBtn: {
-    backgroundColor: PRIMARY,
-    borderRadius: 16,
-    paddingVertical: 14,
-    alignItems: 'center',
-    marginTop: 16,
-    shadowColor: '#000',
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    backgroundColor: PRIMARY, borderRadius: 16, paddingVertical: 14,
+    alignItems: 'center', marginTop: 16, shadowColor: '#000',
+    shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 2,
   },
   primaryBtnPressed: { backgroundColor: '#14B8A6', transform: [{ scale: 0.985 }], shadowOpacity: 0.12, elevation: 3 },
   primaryText: { color: '#fff', fontSize: 16, fontWeight: '700' },
