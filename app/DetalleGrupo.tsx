@@ -115,9 +115,6 @@ export default function DetalleGrupo() {
   const estaCerrado = grupo?.estado === false;
   const [cerrandoGrupo, setCerrandoGrupo] = useState(false);
 
-  const [eliminandoGrupo, setEliminandoGrupo] = useState(false);
-
-
   /* ========= carga de meta del grupo ========= */
   const fetchGrupoMeta = useCallback(async (gid: string) => {
     if (!gid) return;
@@ -161,22 +158,30 @@ export default function DetalleGrupo() {
         if (resp.status >= 200 && resp.status < 300) {
           const payload = typeof resp.data === 'string' ? JSON.parse(resp.data) : resp.data;
 
-        const arr: any[] = payload?.gastos_liquidados ?? [];
-        const mapped: Gasto[] = arr.map(r => ({
-          id: String(r.gasto_id ?? r.id ?? ''),
-          concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
-          pagador: r.pagador_nombre ?? '-',
-          estado: true,
-          moneda: 'CLP',
-          decimales: 0,
-          // r.monto_base_mayor viene en unidad MAYOR; para CLP no hay decimales
-          monto: Number(r.monto_base_mayor ?? (
-            // si tu backend devolviera _min en vez de _mayor, descomenta:
-            // typeof r.monto_base_min === 'number' ? r.monto_base_min / 1 : 0
-            0
-          )),
-        }));
-        setGastos(mapped);
+          const arr: any[] = payload?.gastos_liquidados ?? [];
+          const mapped: Gasto[] = arr.map(r => {
+            const estado =
+              typeof r.estado === 'boolean'
+                ? r.estado
+                : (typeof r.estado_gasto === 'boolean' ? r.estado_gasto : false);
+
+            // si viene _mayor lo usamos; si no, _min (CLP no tiene decimales)
+            const monto =
+              typeof r.monto_base_mayor === 'number'
+                ? Number(r.monto_base_mayor)
+                : (typeof r.monto_base_min === 'number' ? Number(r.monto_base_min) : 0);
+
+            return {
+              id: String(r.gasto_id ?? r.id ?? ''),
+              concepto: String(r.concepto ?? r.descripciongasto ?? '—'),
+              pagador: r.pagador_nombre ?? '-',
+              estado,
+              moneda: 'CLP',
+              decimales: 0,
+              monto,
+            };
+          });
+          setGastos(mapped);
 
           const totalMin: number = Number(payload?.totales?.total_gastos_base_minima || 0);
           setTotalGrupoCLPMin(totalMin);
@@ -316,7 +321,6 @@ export default function DetalleGrupo() {
   };
 
   const verGrafico = useCallback(() => {
-    if(!estaCerrado) return;
     const groupId = String(grupo?.id ?? id ?? '');
     router.push({
       pathname: './GraficoGastosEvento',
@@ -325,49 +329,11 @@ export default function DetalleGrupo() {
         nombre: grupo?.nombre ?? '',
       },
     });
-  }, [estaCerrado, grupo?.id, id, grupo?.nombre]);
+  }, [grupo?.id, id, grupo?.nombre]);
 
-    const eliminarGrupo = useCallback(() => {
-      const groupIdStr = String(grupo?.id ?? id ?? '');
-      if (!groupIdStr) return;
-
-      Alert.alert(
-        'Eliminar grupo',
-        'Esta acción eliminará el grupo y sus gastos. No se puede deshacer.',
-        [
-          { text: 'Cancelar', style: 'cancel' },
-          {
-            text: 'Eliminar',
-            style: 'destructive',
-            onPress: async () => {
-              try {
-                setEliminandoGrupo(true);
-
-                // El backend acepta el id como número; si viene string numérica, la convertimos.
-                const payloadId = /^\d+$/.test(groupIdStr) ? Number(groupIdStr) : groupIdStr;
-
-                const resp = await apiGrupo.delete('/grupo', { data: { grupoId: payloadId } });
-
-                if (resp.status >= 200 && resp.status < 300 &&
-                    (resp.data?.Message === 'SUCCESS' || resp.data?.Operation === 'DELETE')) {
-                  DeviceEventEmitter.emit('grupo:eliminado', { grupoId: groupIdStr });
-                  Alert.alert('Grupo eliminado', 'Se eliminó correctamente.', [
-                    { text: 'OK', onPress: () => router.replace('/VerTodosLosGrupos') },
-                  ]);
-                } else {
-                  const msg = (resp.data?.Message || resp.data?.message) ? ` • ${resp.data.Message || resp.data.message}` : '';
-                  Alert.alert('No se pudo eliminar', `Código ${resp.status}${msg}`);
-                }
-              } catch (e: any) {
-                Alert.alert('Error', e?.message || 'No se pudo conectar con el servidor.');
-              } finally {
-                setEliminandoGrupo(false);
-              }
-            }
-          }
-        ]
-      );
-    }, [grupo?.id, id]);
+  const eliminarGrupo = () => {
+    Alert.alert('En construcción', 'La eliminación de grupos estará disponible pronto.');
+  };
 
   const cerrarGrupo = () => {
     if (estaCerrado) {
@@ -536,45 +502,30 @@ export default function DetalleGrupo() {
                   />
                 </Pressable>
 
-              <Pressable
-                onPress={eliminarGrupo}
-                disabled={estaCerrado || eliminandoGrupo}
-                style={({ pressed }) => [
-                  styles.headerIconBtn,
-                  pressed && !estaCerrado && !eliminandoGrupo && styles.headerIconBtnPressed,
-                  (estaCerrado || eliminandoGrupo) && styles.headerIconBtnDisabled,
-                ]}
-                hitSlop={8}
-              >
-                {eliminandoGrupo ? (
-                  <ActivityIndicator size="small" color="rgba(255,255,255,0.75)" />
-                ) : (
+                <Pressable
+                  onPress={eliminarGrupo}
+                  disabled={estaCerrado}
+                  style={({ pressed }) => [
+                    styles.headerIconBtn,
+                    pressed && !estaCerrado && styles.headerIconBtnPressed,
+                    estaCerrado && styles.headerIconBtnDisabled,
+                  ]}
+                  hitSlop={8}
+                >
                   <MaterialCommunityIcons
                     name="delete-outline"
                     size={19}
-                    color={(estaCerrado || eliminandoGrupo) ? 'rgba(255,255,255,0.35)' : '#fff'}
+                    color={estaCerrado ? 'rgba(255,255,255,0.35)' : '#fff'}
                   />
-                )}
-              </Pressable>
+                </Pressable>
 
-                <Pressable
-                onPress={verGrafico}
-                disabled={!estaCerrado}                      // ⟵ habilita solo si está cerrado
-                style={({ pressed }) => [
-                  styles.headerIconBtn,
-                  pressed && estaCerrado && styles.headerIconBtnPressed,
-                  !estaCerrado && styles.headerIconBtnDisabled
-                ]}
-                hitSlop={8}
-                accessibilityState={{ disabled: !estaCerrado }}
-                accessibilityLabel="Ver gráfico de gastos"
-              >
-                <MaterialCommunityIcons
-                  name="chart-box-outline"
-                  size={19}
-                  color={estaCerrado ? '#fff' : 'rgba(13, 14, 13, 1)'}  // ⟵ negro si está deshabilitado
-                />
-              </Pressable>
+                <Pressable 
+                  onPress={verGrafico} 
+                  style={({ pressed }) => [styles.headerIconBtn, pressed && styles.headerIconBtnPressed]} 
+                  hitSlop={8}
+                >
+                  <MaterialCommunityIcons name="chart-box-outline" size={19} color="#fff" />
+                </Pressable>
               </View>
             </View>
 
