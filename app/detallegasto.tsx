@@ -1,4 +1,4 @@
-// app/detallegasto.tsx
+ //app/detallegasto.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   ActivityIndicator,
@@ -102,9 +102,46 @@ type GastoGrupo = {
   fecha_registro?: string;
 };
 
-/* ====== Helpers ====== */
-const formatFecha = (iso?: string | null) =>
-  iso ? new Date(iso.length === 10 ? `${iso}T00:00:00` : iso).toLocaleDateString('es-CL') : '—';
+/* ====== Helpers de fecha SIN desfase ====== */
+/** Muestra fecha respetando el día original sin correr por timezone. */
+function formatFechaSeguro(src?: string | null) {
+  if (!src) return '—';
+  const s = String(src).trim();
+  // Caso fecha pura YYYY-MM-DD -> construir en local sin TZ.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    const dLocal = new Date(y, (m ?? 1) - 1, d ?? 1);
+    return dLocal.toLocaleDateString('es-CL');
+  }
+  // Caso ISO con hora (posible Z): tomar componentes UTC para no desplazar el día.
+  const dIso = new Date(s);
+  if (!isNaN(dIso.getTime())) {
+    const y = dIso.getUTCFullYear();
+    const m = dIso.getUTCMonth();
+    const d = dIso.getUTCDate();
+    const dLocal = new Date(y, m, d); // recreo solo con Y/M/D
+    return dLocal.toLocaleDateString('es-CL');
+  }
+  return '—';
+}
+
+/** Timestamp para ordenar fechas sin correrse por TZ */
+function timeForSort(src?: string) {
+  if (!src) return 0;
+  const s = String(src).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const [y, m, d] = s.split('-').map(Number);
+    return new Date(y, (m ?? 1) - 1, d ?? 1).getTime();
+  }
+  const dIso = new Date(s);
+  if (!isNaN(dIso.getTime())) {
+    // Ordenar por día UTC (00:00:00) para evitar drift
+    return Date.UTC(dIso.getUTCFullYear(), dIso.getUTCMonth(), dIso.getUTCDate());
+  }
+  return 0;
+}
+
+/* ====== Otros helpers ====== */
 const escapeHtml = (s: string) =>
   String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
            .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -117,7 +154,7 @@ const toInt = (v: unknown) => {
   const n = Number.parseInt(String(s ?? '').trim(), 10);
   return Number.isNaN(n) ? null : n;
 };
-/** Si es numérico devuelvo número; si no, devuelvo el original (útil para pasar params sin romper) */
+/** Si es numérico devuelvo número; si no, devuelvo el original (útil para params) */
 const asNumberIfNumeric = (v: unknown) => {
   const n = toInt(v);
   return n ?? v;
@@ -150,6 +187,7 @@ function mapGastos(list: any[]): GastoGrupo[] {
     monto_total: Number(r.monto ?? r.monto_total ?? r.total ?? r.valor ?? r.precio ?? 0),
     moneda: r.moneda ?? 'CLP',
     decimales: r.decimales,
+    // Mantengo el string original; el formateo/orden usa helpers "seguros"
     fecha_registro: r.fecha ?? r.fecha_registro ?? r.created_at ?? undefined,
   }));
 }
@@ -360,7 +398,6 @@ export default function DetalleGastoScreen() {
       try {
         setLoading(true);
 
-        // Si el flag llega desde DetalleGrupo, úsalo directamente
         if (cerradoForzado === true) {
           await loadCerrado(gidNum ?? gidRaw);
           return;
@@ -370,7 +407,6 @@ export default function DetalleGastoScreen() {
           return;
         }
 
-        // Si NO vino flag, detecta con /grupo y, si falla, prueba abierto y cae a cerrado
         let cerrado: boolean | null = null;
         let grupoIdResolved: string | number | undefined = (gidNum ?? gidRaw);
 
@@ -383,9 +419,7 @@ export default function DetalleGastoScreen() {
               cerrado = !!meta.fecha_cierre;
               grupoIdResolved = meta.grupo_id;
             }
-          } catch {
-            // si falla, seguimos con heurística abajo
-          }
+          } catch { /* noop */ }
         }
 
         if (cerrado === true) {
@@ -432,19 +466,15 @@ export default function DetalleGastoScreen() {
 
     const nombreGrupo = grupoResumen?.nombre || '—';
     const creador = grupoResumen?.creador_nombre || '—';
-    const fechaInicio = formatFecha(grupoResumen?.fecha_inicio);
+    const fechaInicio = formatFechaSeguro(grupoResumen?.fecha_inicio);
 
     const gastosGrupoHtml = (gastosGrupo ?? [])
-      .sort((a, b) => {
-        const da = a.fecha_registro ? new Date(a.fecha_registro).getTime() : 0;
-        const db = b.fecha_registro ? new Date(b.fecha_registro).getTime() : 0;
-        return db - da;
-      })
+      .sort((a, b) => timeForSort(b.fecha_registro) - timeForSort(a.fecha_registro))
       .map(
         (g) => `
       <tr>
         <td>${escapeHtml(g.descripcion || '—')}</td>
-        <td class="center">${escapeHtml(formatFecha(g.fecha_registro))}</td>
+        <td class="center">${escapeHtml(formatFechaSeguro(g.fecha_registro))}</td>
         <td class="right"><strong>${
           escapeHtml(formatMoney(g.monto_total, g.moneda ?? 'CLP', getDecimals(g.moneda, g.decimales)))
         }</strong></td>
@@ -531,7 +561,18 @@ export default function DetalleGastoScreen() {
         </tr>
       </thead>
       <tbody>
-        ${gastosGrupoHtml || '<tr><td colspan="3" class="center" style="color:#64748B">Sin registros</td></tr>'}
+        ${(gastosGrupo ?? [])
+          .sort((a, b) => timeForSort(b.fecha_registro) - timeForSort(a.fecha_registro))
+          .map(
+            (g) => `
+          <tr>
+            <td>${escapeHtml(g.descripcion || '—')}</td>
+            <td class="center">${escapeHtml(formatFechaSeguro(g.fecha_registro))}</td>
+            <td class="right"><strong>${
+              escapeHtml(formatMoney(g.monto_total, g.moneda ?? 'CLP', getDecimals(g.moneda, g.decimales)))
+            }</strong></td>
+          </tr>`
+          ).join('') || '<tr><td colspan="3" class="center" style="color:#64748B">Sin registros</td></tr>'}
       </tbody>
     </table>
 
@@ -689,17 +730,13 @@ export default function DetalleGastoScreen() {
         ) : (
           gastosGrupo
             .slice()
-            .sort((a, b) => {
-              const da = a.fecha_registro ? new Date(a.fecha_registro).getTime() : 0;
-              const db = b.fecha_registro ? new Date(b.fecha_registro).getTime() : 0;
-              return db - da;
-            })
+            .sort((a, b) => timeForSort(b.fecha_registro) - timeForSort(a.fecha_registro))
             .map((g, idx) => (
               <View key={String(g.id)} style={[s.row, idx === gastosGrupo.length - 1 && s.rowLast]}>
                 <Text style={[s.cellText, s.colGasto]} numberOfLines={1}>
                   {g.descripcion}
                 </Text>
-                <Text style={[s.cellText, s.colFecha, s.center]}>{formatFecha(g.fecha_registro)}</Text>
+                <Text style={[s.cellText, s.colFecha, s.center]}>{formatFechaSeguro(g.fecha_registro)}</Text>
                 <Text style={[s.cellText, s.colMonto, s.right]}>
                   {formatMoney(g.monto_total, g.moneda ?? 'CLP', getDecimals(g.moneda, g.decimales))}
                 </Text>
