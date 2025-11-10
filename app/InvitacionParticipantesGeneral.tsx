@@ -79,7 +79,7 @@ const abrirQR = useCallback(() => {
     return;
     }
     router.push({
-    pathname: '/InvitacionParticipantesQR',
+    pathname: './InvitacionParticipantesQR',
     params: {
         participanteId: String(participanteId),
         grupoId: String(grupoId),
@@ -90,7 +90,7 @@ const abrirQR = useCallback(() => {
 
 // 👉 Nuevo: abrir escáner de QR (para unirse con el usuario actual)
 const escanearQR = useCallback(() => {
-    router.push('/EscanearQR');
+    router.push('./EscanearQR');
 }, []);
 
 return (

@@ -162,7 +162,7 @@ export default function MenuPrincipal() {
 
             {/* Escanear QR */}
             <Pressable
-              onPress={() => router.replace('/EscanearQR')}
+              onPress={() => router.replace('./EscanearQR')}
               style={({ pressed }) => [
                 estilos.actionCard,
                 pressed && estilos.actionCardPressed
