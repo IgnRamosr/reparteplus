@@ -44,9 +44,10 @@ const apiGrupo = axios.create({
 });
 
 /* ====== Dinero (minor → major) ====== */
-const CURRENCY_DECIMALS: Record<string, number> = {
-  CLP: 0, USD: 2, EUR: 2, ARS: 2, BRL: 2, MXN: 2, COP: 2, PEN: 2
-};
+const CURRENCY_DECIMALS = {
+  CLP: 0, USD: 2, EUR: 2, ARS: 2, BRL: 2, MXN: 2, COP: 2, PEN: 2, JPY: 0, PYG: 0
+} as Record<string, number>;
+
 function getDecimals(moneda?: string, fallback?: number) {
   if (typeof fallback === 'number') return fallback;
   return CURRENCY_DECIMALS[String(moneda || '').toUpperCase()] ?? 0;
@@ -60,6 +61,29 @@ function formatMoney(minor: number | string, moneda = 'CLP', decOverride?: numbe
   if (Number.isNaN(n)) return '—';
   const major = toMajorUnits(n, dec);
   return major.toLocaleString('es-CL', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + ` ${moneda}`;
+}
+
+// ⚙️ Umbral de “residuo” (en unidades mínimas)
+function epsilonMinor(moneda?: string, decOverride?: number) {
+  const dec = getDecimals(moneda, decOverride);
+  return dec > 0 ? 1 : 10; // p.ej. <0.01 (USD/EUR) ó <10 CLP
+}
+function clampMinorToZero(minor: number, moneda?: string, decOverride?: number) {
+  return Math.abs(minor) < epsilonMinor(moneda, decOverride) ? 0 : minor;
+}
+
+// ✅ NUEVO: normalizador para MOSTRAR (no cambia cálculos)
+function normalizeMinorForDisplay(minor: number, moneda?: string, decOverride?: number) {
+  const dec = getDecimals(moneda, decOverride);
+  let v = Math.trunc(minor);
+  // 1) clamp de “casi cero”
+  if (Math.abs(v) < epsilonMinor(moneda, decOverride)) return 0;
+  // 2) snap para monedas sin decimales: redondeo hacia abajo al múltiplo de 10
+  if (dec === 0) {
+    // Evita residuos como 155009 → 155000 mostrados
+    v = Math.floor(v / 10) * 10;
+  }
+  return v;
 }
 
 /* ====== Tipos ====== */
@@ -103,29 +127,24 @@ type GastoGrupo = {
 };
 
 /* ====== Helpers de fecha SIN desfase ====== */
-/** Muestra fecha respetando el día original sin correr por timezone. */
 function formatFechaSeguro(src?: string | null) {
   if (!src) return '—';
   const s = String(src).trim();
-  // Caso fecha pura YYYY-MM-DD -> construir en local sin TZ.
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
     const [y, m, d] = s.split('-').map(Number);
     const dLocal = new Date(y, (m ?? 1) - 1, d ?? 1);
     return dLocal.toLocaleDateString('es-CL');
   }
-  // Caso ISO con hora (posible Z): tomar componentes UTC para no desplazar el día.
   const dIso = new Date(s);
   if (!isNaN(dIso.getTime())) {
     const y = dIso.getUTCFullYear();
     const m = dIso.getUTCMonth();
     const d = dIso.getUTCDate();
-    const dLocal = new Date(y, m, d); // recreo solo con Y/M/D
+    const dLocal = new Date(y, m, d);
     return dLocal.toLocaleDateString('es-CL');
   }
   return '—';
 }
-
-/** Timestamp para ordenar fechas sin correrse por TZ */
 function timeForSort(src?: string) {
   if (!src) return 0;
   const s = String(src).trim();
@@ -135,7 +154,6 @@ function timeForSort(src?: string) {
   }
   const dIso = new Date(s);
   if (!isNaN(dIso.getTime())) {
-    // Ordenar por día UTC (00:00:00) para evitar drift
     return Date.UTC(dIso.getUTCFullYear(), dIso.getUTCMonth(), dIso.getUTCDate());
   }
   return 0;
@@ -148,19 +166,16 @@ const escapeHtml = (s: string) =>
 const safeName = (s: string) =>
   (s || 'gasto').replace(/[^\p{L}\p{N}\-_ ]/gu, '').replace(/\s+/g, '_').slice(0, 60);
 
-/** Convierte a entero base 10 (o null si no es número) */
 const toInt = (v: unknown) => {
   const s = Array.isArray(v) ? v[0] : v;
   const n = Number.parseInt(String(s ?? '').trim(), 10);
   return Number.isNaN(n) ? null : n;
 };
-/** Si es numérico devuelvo número; si no, devuelvo el original (útil para params) */
 const asNumberIfNumeric = (v: unknown) => {
   const n = toInt(v);
   return n ?? v;
 };
 
-/* Descripción robusta */
 function pickDescripcion(row: any): string {
   if (!row || typeof row !== 'object') return 'Sin descripción';
   const keys = Object.keys(row);
@@ -187,7 +202,6 @@ function mapGastos(list: any[]): GastoGrupo[] {
     monto_total: Number(r.monto ?? r.monto_total ?? r.total ?? r.valor ?? r.precio ?? 0),
     moneda: r.moneda ?? 'CLP',
     decimales: r.decimales,
-    // Mantengo el string original; el formateo/orden usa helpers "seguros"
     fecha_registro: r.fecha ?? r.fecha_registro ?? r.created_at ?? undefined,
   }));
 }
@@ -221,15 +235,12 @@ export default function DetalleGastoScreen() {
   const { gasto, grupoId, cerrado: cerradoParam } =
     useLocalSearchParams<{ gasto?: string; grupoId?: string; cerrado?: string }>();
 
-  // Normalizo posibles string[] de los params
   const gastoIdRaw = Array.isArray(gasto) ? gasto[0] : gasto;
   const gidRaw     = Array.isArray(grupoId) ? grupoId[0] : grupoId;
 
-  // Convierto a número cuando sea posible
   const gastoIdNum = toInt(gastoIdRaw);
   const gidNum     = toInt(gidRaw);
 
-  // Flag de cerrado forzado desde la pantalla anterior
   const cerradoForzado =
     typeof cerradoParam !== 'undefined'
       ? (cerradoParam === '1' || String(cerradoParam).toLowerCase() === 'true')
@@ -258,10 +269,10 @@ export default function DetalleGastoScreen() {
   );
 
   /* ====== Loaders ====== */
-  // ABIERTO: apiGasto '/gasto-detalle'
   const loadAbierto = useCallback(async () => {
+    // ⚙️ cache-buster _t
     const resp = await apiGasto.get<GastoDetalleResp>('/gasto-detalle', {
-      params: { gastoId: gastoIdNum ?? gastoIdRaw }
+      params: { gastoId: gastoIdNum ?? gastoIdRaw, _t: Date.now() }
     });
     if (!(resp.status >= 200 && resp.data?.gasto)) throw new Error('No se pudo cargar detalle (abierto).');
 
@@ -276,13 +287,19 @@ export default function DetalleGastoScreen() {
       grupoId: grupoIdResolved,
     });
 
+    // ✅ clamp + snap para visualizar sin residuos
     setFilas(
-      (resp.data.integrantes ?? []).map((p) => ({
-        id: String(p.participante_id),
-        nombre: p.nombre,
-        pendiente: formatMoney(p.pendiente, g.moneda, dec),
-        pagado: !!p.estado,
-      }))
+      (resp.data.integrantes ?? []).map((p) => {
+        const pendienteRaw = Number(p.pendiente ?? 0);
+        const pendienteNorm = normalizeMinorForDisplay(pendienteRaw, g.moneda, dec);
+        const pagadoCalc    = pendienteNorm === 0;
+        return {
+          id: String(p.participante_id),
+          nombre: p.nombre,
+          pendiente: formatMoney(pendienteNorm, g.moneda, dec),
+          pagado: !!(p.estado || pagadoCalc),
+        };
+      })
     );
 
     // Meta grupo
@@ -309,12 +326,12 @@ export default function DetalleGastoScreen() {
     setGastosGrupo(mapGastos(reg));
   }, [gastoIdNum, gastoIdRaw, gidNum, gidRaw]);
 
-  // CERRADO: apiGrupo '/gasto/liquidado'
   const loadCerrado = useCallback(async (grupoIdResolved?: string | number) => {
     const liqParams: any = {
       gastoId:  gastoIdNum ?? gastoIdRaw,
       gasto_id: gastoIdNum ?? gastoIdRaw,
       id:       gastoIdNum ?? gastoIdRaw,
+      _t:       Date.now(), // ⚙️ cache-buster
     };
     const gidQuery = typeof grupoIdResolved !== 'undefined' ? grupoIdResolved : (gidNum ?? gidRaw);
     if (gidQuery != null) liqParams.grupoId = asNumberIfNumeric(gidQuery);
@@ -324,7 +341,7 @@ export default function DetalleGastoScreen() {
       r = await apiGrupo.get('/gasto/liquidado', { params: liqParams });
     } catch {
       r = await apiGrupo.get('/gasto/liquidado', {
-        params: { gastoId: gastoIdNum ?? gastoIdRaw, gasto_id: gastoIdNum ?? gastoIdRaw, id: gastoIdNum ?? gastoIdRaw }
+        params: { gastoId: gastoIdNum ?? gastoIdRaw, gasto_id: gastoIdNum ?? gastoIdRaw, id: gastoIdNum ?? gastoIdRaw, _t: Date.now() }
       });
     }
 
@@ -342,17 +359,21 @@ export default function DetalleGastoScreen() {
 
     const asign = Array.isArray(g.asignaciones) ? g.asignaciones : (g.integrantes ?? []);
     setFilas(
-      asign.map((a: any) => ({
-        id: String(a.participante_id ?? a.id ?? a.pid ?? Math.random()),
-        nombre: a.participante_nombre ?? a.nombre ?? '—',
-        pendiente: formatMoney(
+      asign.map((a: any) => {
+        const pendienteRaw = Number(
           a.pendiente_base_min ??
-          Math.max((a.asignado_base_min ?? a.asignado ?? 0) - (a.pagado_base_min ?? a.pagado ?? 0), 0),
-          'CLP',
-          0
-        ),
-        pagado: !!(a.estado ?? a.pagado_total ?? (a.pendiente_base_min === 0)),
-      }))
+          Math.max((a.asignado_base_min ?? a.asignado ?? 0) - (a.pagado_base_min ?? a.pagado ?? 0), 0)
+        );
+        // ✅ CLP en liquidado siempre mostrado sin ‘colas’
+        const pendienteNorm = normalizeMinorForDisplay(pendienteRaw, 'CLP', 0);
+        const pagadoCalc    = pendienteNorm === 0;
+        return {
+          id: String(a.participante_id ?? a.id ?? a.pid ?? Math.random() ),
+          nombre: a.participante_nombre ?? a.nombre ?? '—',
+          pendiente: formatMoney(pendienteNorm, 'CLP', 0),
+          pagado: !!(a.estado ?? a.pagado_total ?? pagadoCalc),
+        };
+      })
     );
 
     // Meta grupo
@@ -374,11 +395,11 @@ export default function DetalleGastoScreen() {
         reg = Array.isArray(raw3) ? raw3 : [];
       } catch {}
     }
-
     setGastosGrupo(
       reg.map((row: any, i: number) => ({
         id: row.gasto_id ?? row.id ?? i,
         descripcion: row.concepto ?? row.descripcion ?? '—',
+        // En liquidado mostramos CLP (0 dec) ya “snappeado” al formatear
         monto_total: Number(row.monto_base_min ?? row.total_base_min ?? row.monto ?? 0),
         moneda: 'CLP',
         decimales: 0,

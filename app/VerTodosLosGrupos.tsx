@@ -332,7 +332,7 @@ export default function VerTodosLosGrupos() {
       )}
 
       <Pressable
-        onPress={() => router.back()}
+        onPress={() => router.replace({ pathname: "/MenuPrincipal" })}
         android_ripple={{ color: 'rgba(255,255,255,0.15)' }}
         style={({ pressed }) => [estilos.boton, pressed && estilos.botonPressed]}
       >

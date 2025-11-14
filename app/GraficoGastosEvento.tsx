@@ -389,9 +389,14 @@ export default function GraficoGastosEvento() {
     datasets: [{ data: barAgg.map((x) => x.monto) }],
   };
 
+  /* ====== CAMBIO: valores redondeados SOLO para mostrar en el Pie ====== */
+  const totalPagadoEventoR = useMemo(() => Math.round(totalPagadoEvento), [totalPagadoEvento]);          // ⬅️
+  const totalPendienteEventoR = useMemo(() => Math.round(totalPendienteEvento), [totalPendienteEvento]);  // ⬅️
+
   const pieData = [
-    { name: "Pagado", population: totalPagadoEvento, color: SUCCESS, legendFontColor: TEXT_MUTED, legendFontSize: Math.round(12 * S) },
-    { name: "Pendiente", population: totalPendienteEvento, color: WARNING, legendFontColor: TEXT_MUTED, legendFontSize: Math.round(12 * S) },
+    // Usamos las versiones redondeadas para evitar decimales poco estéticos en el gráfico
+    { name: "Pagado",    population: totalPagadoEventoR,    color: SUCCESS,  legendFontColor: TEXT_MUTED, legendFontSize: Math.round(12 * S) }, // ⬅️
+    { name: "Pendiente", population: totalPendienteEventoR, color: WARNING,  legendFontColor: TEXT_MUTED, legendFontSize: Math.round(12 * S) }, // ⬅️
   ];
 
   type Saldo = { nombre: string; pago: number; debe: number; saldo: number };

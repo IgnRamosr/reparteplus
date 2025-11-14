@@ -445,6 +445,32 @@ export default function DetalleGrupo() {
   const isSmallScreen = SCREEN_W < 375;
   const cardPadding = isSmallScreen ? 12 : 16;
 
+  /* ===========================
+   * ESCANEO DE BOLETA (CÁMARA / GALERÍA)
+   * =========================== */
+
+  // Abre la pantalla de escaneo pasando la imagen seleccionada
+  const navegarAEscanear = (imageUri: string) => {
+    const groupId = String(grupo?.id ?? id ?? '');
+    router.push({
+      pathname: '/', // ⬅️ Ajusta si tu ruta de revisión/escaneo tiene otro path
+      params: { grupoId: groupId, imageUri }
+    });
+  };
+
+
+
+
+
+// Abre la pantalla personalizada de escaneo con CameraView y botón de galería
+const abrirCamara = React.useCallback(() => {
+  const groupId = String(grupo?.id ?? id ?? '');
+  router.push({ pathname: '/EscaneoBoleta', params: { grupoId: groupId } });
+}, [grupo?.id, id]);
+
+
+
+
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView 
@@ -750,7 +776,7 @@ export default function DetalleGrupo() {
           )}
         </View>
 
-        {/* Botones de acción - Grid 2x2 */}
+        {/* Botones de acción - Grid 2x2 + fila extra para escaneo */}
         <View style={[styles.actionsGrid, { paddingHorizontal: cardPadding }]}>
           {/* Fila 1 */}
           <View style={styles.actionsRow}>
@@ -804,7 +830,7 @@ export default function DetalleGrupo() {
           {/* Fila 2 */}
           <View style={styles.actionsRow}>
             <Pressable
-              onPress={goRegistrarGasto}
+              onPress={abrirCamara}
               disabled={estaCerrado}
               style={({ pressed }) => [
                 styles.gridActionCard,
@@ -856,6 +882,37 @@ export default function DetalleGrupo() {
               </Text>
             </Pressable>
           </View>
+
+          {/* Fila 3 — Escanear boleta */}
+          {/* <View style={styles.actionsRow}>
+            <Pressable
+              onPress={abrirCamara}
+              disabled={estaCerrado}
+              style={({ pressed }) => [
+                styles.gridActionCard,
+                pressed && !estaCerrado && styles.gridActionCardPressed,
+                estaCerrado && styles.gridActionCardDisabled,
+                { position: 'relative' }
+              ]}
+            >
+              <View style={[styles.gridActionIcon, estaCerrado && styles.gridActionIconDisabled]}>
+                <MaterialCommunityIcons 
+                  name="camera" 
+                  size={28} 
+                  color={estaCerrado ? '#94A3B8' : PRIMARY} 
+                />
+              </View>
+              <Text style={[styles.gridActionTitle, estaCerrado && styles.gridActionTitleDisabled]}>
+                Escanear boleta
+              </Text>
+              <Text style={[styles.gridActionDesc, estaCerrado && styles.gridActionDescDisabled]}>
+                Cámara para escanear
+              </Text>
+            </Pressable> */}
+
+            {/* Espaciador para mantener la grilla 2x2 */}
+            {/* <View style={[styles.gridActionCard, { opacity: 0 }]} />
+          </View> */}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1001,4 +1058,19 @@ const styles = StyleSheet.create({
   gridActionTitleDanger: { fontSize: 15, fontWeight: '800', color: DANGER, textAlign: 'center', letterSpacing: -0.3 },
   gridActionTitleDisabled: { color: TEXT_MUTED },
   gridActionDesc: { fontSize: 12, color: TEXT_MUTED, textAlign: 'center', fontWeight: '500', lineHeight: 16 },
+
+  // Botón flotante de galería en la tarjeta de escaneo
+  galleryFloatingBtn: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: BORDER,
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });
