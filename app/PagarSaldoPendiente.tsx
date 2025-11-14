@@ -239,27 +239,7 @@ export default function PagarEfectivo() {
 
         <View style={{ alignItems: 'center', flex: 1 }}>
           <Text style={s.brand}>Reparte+</Text>
-          <Text style={s.title}>Pagar saldo pendiente</Text>
-        </View>
-
-        {/* Botón: Aceptar pago con tarjeta */}
-        <View style={{ flexDirection: 'row' }}>
-          <Pressable
-            onPress={() =>
-              router.push({
-                pathname: './PagarTarjeta',
-                params: {
-                  grupoId: grupoId ?? '',
-                  deudorId: deudorId ?? '',
-                },
-              })
-            }
-            style={({ pressed }) => [s.iconBtn, pressed && s.iconPressed]}
-            hitSlop={10}
-            android_ripple={{ color: 'rgba(14,165,164,0.15)', borderless: true }}
-          >
-            <MaterialCommunityIcons name="credit-card-outline" size={22} color={INK} />
-          </Pressable>
+          <Text style={s.title}>Pagar Saldo Pendiente</Text>
         </View>
       </View>
 
@@ -332,7 +312,7 @@ export default function PagarEfectivo() {
       ) : null}
 
       {/* Cantidad a pagar */}
-      <Text style={s.label}>Cantidad a pagar</Text>
+      <Text style={s.label}>Cantidad a Pagar</Text>
       <View style={s.amountRow}>
         <TextInput
           value={monto}
