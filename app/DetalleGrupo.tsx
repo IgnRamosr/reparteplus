@@ -115,6 +115,8 @@ export default function DetalleGrupo() {
   const estaCerrado = grupo?.estado === false;
   const [cerrandoGrupo, setCerrandoGrupo] = useState(false);
 
+  const [eliminandoGrupo, setEliminandoGrupo] = useState(false);
+
   /* ========= carga de meta del grupo ========= */
   const fetchGrupoMeta = useCallback(async (gid: string) => {
     if (!gid) return;
@@ -331,9 +333,47 @@ export default function DetalleGrupo() {
     });
   }, [grupo?.id, id, grupo?.nombre]);
 
-  const eliminarGrupo = () => {
-    Alert.alert('En construcción', 'La eliminación de grupos estará disponible pronto.');
-  };
+  const eliminarGrupo = useCallback(() => {
+    const groupIdStr = String(grupo?.id ?? id ?? '');
+    if (!groupIdStr) return;
+
+    Alert.alert(
+      'Eliminar grupo',
+      'Esta acción eliminará el grupo y sus gastos. No se puede deshacer.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setEliminandoGrupo(true);
+
+              // El backend acepta el id como número; si viene string numérica, la convertimos.
+              const payloadId = /^\d+$/.test(groupIdStr) ? Number(groupIdStr) : groupIdStr;
+
+              const resp = await apiGrupo.delete('/grupo', { data: { grupoId: payloadId } });
+
+              if (resp.status >= 200 && resp.status < 300 &&
+                  (resp.data?.Message === 'SUCCESS' || resp.data?.Operation === 'DELETE')) {
+                DeviceEventEmitter.emit('grupo:eliminado', { grupoId: groupIdStr });
+                Alert.alert('Grupo eliminado', 'Se eliminó correctamente.', [
+                  { text: 'OK', onPress: () => router.replace('/VerTodosLosGrupos') },
+                ]);
+              } else {
+                const msg = (resp.data?.Message || resp.data?.message) ? ` • ${resp.data.Message || resp.data.message}` : '';
+                Alert.alert('No se pudo eliminar', `Código ${resp.status}${msg}`);
+              }
+            } catch (e: any) {
+              Alert.alert('Error', e?.message || 'No se pudo conectar con el servidor.');
+            } finally {
+              setEliminandoGrupo(false);
+            }
+          }
+        }
+      ]
+    );
+  }, [grupo?.id, id]);
 
   const cerrarGrupo = () => {
     if (estaCerrado) {
@@ -529,21 +569,25 @@ const abrirCamara = React.useCallback(() => {
                 </Pressable>
 
                 <Pressable
-                  onPress={eliminarGrupo}
-                  disabled={estaCerrado}
-                  style={({ pressed }) => [
-                    styles.headerIconBtn,
-                    pressed && !estaCerrado && styles.headerIconBtnPressed,
-                    estaCerrado && styles.headerIconBtnDisabled,
-                  ]}
-                  hitSlop={8}
-                >
+                onPress={eliminarGrupo}
+                disabled={estaCerrado || eliminandoGrupo}
+                style={({ pressed }) => [
+                  styles.headerIconBtn,
+                  pressed && !estaCerrado && !eliminandoGrupo && styles.headerIconBtnPressed,
+                  (estaCerrado || eliminandoGrupo) && styles.headerIconBtnDisabled,
+                ]}
+                hitSlop={8}
+              >
+                {eliminandoGrupo ? (
+                  <ActivityIndicator size="small" color="rgba(255,255,255,0.75)" />
+                ) : (
                   <MaterialCommunityIcons
                     name="delete-outline"
                     size={19}
-                    color={estaCerrado ? 'rgba(255,255,255,0.35)' : '#fff'}
+                    color={(estaCerrado || eliminandoGrupo) ? 'rgba(255,255,255,0.35)' : '#fff'}
                   />
-                </Pressable>
+                )}
+              </Pressable>
 
                 <Pressable 
                   onPress={verGrafico} 
