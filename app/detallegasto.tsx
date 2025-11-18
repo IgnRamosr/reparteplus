@@ -1,4 +1,4 @@
-// app/detallegasto.tsx
+ //app/detallegasto.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   ActivityIndicator,

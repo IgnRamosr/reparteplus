@@ -312,7 +312,7 @@ export default function PagarEfectivo() {
       ) : null}
 
       {/* Cantidad a pagar */}
-      <Text style={s.label}>Cantidad a pagar</Text>
+      <Text style={s.label}>Cantidad a Pagar</Text>
       <View style={s.amountRow}>
         <TextInput
           value={monto}
