@@ -117,11 +117,15 @@ const aDate = (cl: string) => {
 /* ============================================================================
  *  TIPOS LOCALES
  * ============================================================================ */
+type SplitMode = 'EQUAL' | 'QTY';
+
 type ItemEditable = {
   name: string;
   qtyStr: string;
   unitStr: string;
   lineCents: number; // >= 0
+  /** Modo de reparto: 'EQUAL' (por igual) o 'QTY' (por cantidad consumida) */
+  splitMode: SplitMode;
 };
 
 type DiscountView = {
@@ -346,10 +350,27 @@ export default function RevisionBoleta() {
           const line = (typeof it.line_total_cents === 'number'
             ? it.line_total_cents
             : qty * (it.unit_price_cents ?? 0)) || 0;
-          return { name: String(it?.name || ''), qtyStr, unitStr, lineCents: Math.max(0, Number(line)) };
+          return {
+            name: String(it?.name || ''),
+            qtyStr,
+            unitStr,
+            lineCents: Math.max(0, Number(line)),
+            // Por defecto, modo "por igual"; el usuario puede cambiarlo a "QTY"
+            splitMode: 'EQUAL',
+          };
         });
 
-      setItems(inicial.length > 0 ? inicial : [{ name: '', qtyStr: '1', unitStr: '0', lineCents: 0 }]);
+      setItems(inicial.length > 0
+        ? inicial
+        : [{
+          name: '',
+          qtyStr: '1',
+          unitStr: '0',
+          lineCents: 0,
+          splitMode: 'EQUAL',
+        }]
+      );
+
       setDiscounts(allDiscounts);
       setMostrarDescuentos(DISCOUNTS_ENABLED && allDiscounts.length > 0);
 
@@ -415,9 +436,23 @@ export default function RevisionBoleta() {
       return clone;
     });
   };
-  const agregarItem = () => {
-    setItems(prev => [...prev, { name: '', qtyStr: '1', unitStr: '0', lineCents: 0 }]);
+
+  const cambiarSplitMode = (idx: number, mode: SplitMode) => {
+    setItems(prev => {
+      const clone = [...prev];
+      const base = { ...clone[idx], splitMode: mode };
+      clone[idx] = base;
+      return clone;
+    });
   };
+
+  const agregarItem = () => {
+    setItems(prev => [
+      ...prev,
+      { name: '', qtyStr: '1', unitStr: '0', lineCents: 0, splitMode: 'EQUAL' }
+    ]);
+  };
+
   const eliminarItem = (idx: number) => {
     setItems(prev => prev.filter((_, i) => i !== idx));
   };
@@ -471,13 +506,14 @@ export default function RevisionBoleta() {
     }
   };
 
-  // Continuar → enviar payload limpio (sin descuentos si están ocultos)
+  // Continuar → enviar payload limpio (incluye splitMode por ítem)
   const continuar = () => {
     const normalizado = items.map(it => ({
       name: it.name?.trim() || 'Ítem',
       qty: Number((it.qtyStr || '0').replace(',', '.')) || 0,
       unit_price_cents: aCentavos(it.unitStr || '0', moneda),
       line_total_cents: it.lineCents || 0,
+      splitMode: it.splitMode || 'EQUAL',
     }));
 
     const meta = {
@@ -683,6 +719,57 @@ export default function RevisionBoleta() {
                     keyboardType="decimal-pad"
                     style={styles.inputItem}
                   />
+                </View>
+              </View>
+
+              {/* NUEVO: selector de modo de reparto */}
+              <View style={styles.splitModeRow}>
+                <View style={styles.splitModeLabelBox}>
+                  <MaterialCommunityIcons name="account-multiple" size={16} color="#6B7280" />
+                  <Text style={styles.splitModeLabel}>Cómo quieres repartir este ítem?</Text>
+                </View>
+                <View style={styles.splitModePillsRow}>
+                  <Pressable
+                    onPress={() => cambiarSplitMode(idx, 'EQUAL')}
+                    style={({ pressed }) => [
+                      styles.splitModePill,
+                      it.splitMode === 'EQUAL' && styles.splitModePillActive,
+                      pressed && styles.splitModePillPressed
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="scale-balance"
+                      size={16}
+                      color={it.splitMode === 'EQUAL' ? '#065F46' : '#6B7280'}
+                    />
+                    <Text style={[
+                      styles.splitModePillText,
+                      it.splitMode === 'EQUAL' && styles.splitModePillTextActive
+                    ]}>
+                      Por igual
+                    </Text>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={() => cambiarSplitMode(idx, 'QTY')}
+                    style={({ pressed }) => [
+                      styles.splitModePill,
+                      it.splitMode === 'QTY' && styles.splitModePillActiveAlt,
+                      pressed && styles.splitModePillPressed
+                    ]}
+                  >
+                    <MaterialCommunityIcons
+                      name="counter"
+                      size={16}
+                      color={it.splitMode === 'QTY' ? '#1D4ED8' : '#6B7280'}
+                    />
+                    <Text style={[
+                      styles.splitModePillText,
+                      it.splitMode === 'QTY' && styles.splitModePillTextActiveAlt
+                    ]}>
+                      Por cantidad
+                    </Text>
+                  </Pressable>
                 </View>
               </View>
 
@@ -1105,6 +1192,65 @@ const styles = StyleSheet.create({
   inputItem: {
     height: 44, borderRadius: 12, borderWidth: 1, borderColor: '#D1D5DB', paddingHorizontal: 12,
     backgroundColor: '#FFFFFF', color: TEXT, fontSize: 15, fontWeight: '500',
+  },
+
+  // NUEVO: modo de reparto
+  splitModeRow: {
+    marginTop: 4,
+    marginBottom: 4,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 10,
+  },
+  splitModeLabelBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  splitModeLabel: {
+    fontSize: 12,
+    color: '#4B5563',
+    fontWeight: '700',
+  },
+  splitModePillsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  splitModePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#E5E7EB',
+  },
+  splitModePillActive: {
+    backgroundColor: '#D1FAE5',
+    borderWidth: 1,
+    borderColor: '#6EE7B7',
+  },
+  splitModePillActiveAlt: {
+    backgroundColor: '#DBEAFE',
+    borderWidth: 1,
+    borderColor: '#60A5FA',
+  },
+  splitModePillPressed: {
+    opacity: 0.85,
+    transform: [{ scale: 0.97 }],
+  },
+  splitModePillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4B5563',
+  },
+  splitModePillTextActive: {
+    color: '#065F46',
+  },
+  splitModePillTextActiveAlt: {
+    color: '#1D4ED8',
   },
 
   // Total Linea
