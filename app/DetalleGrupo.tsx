@@ -1,5 +1,5 @@
 // app/grupos/[id].tsx
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import {
   View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator, Alert,
   DeviceEventEmitter, useWindowDimensions, NativeSyntheticEvent, NativeScrollEvent, Platform,
@@ -333,6 +333,18 @@ export default function DetalleGrupo() {
     });
   }, [grupo?.id, id, grupo?.nombre]);
 
+  // ✅ NUEVO: determinar si todos los gastos están pagados
+  const todosGastosPagados = useMemo(
+    () => gastos.every(g => g.estado === true),
+    [gastos]
+  );
+
+  // ✅ NUEVO: lógica para habilitar / deshabilitar el botón de eliminar grupo
+  // - Se deshabilita si se está eliminando
+  // - Se deshabilita si el grupo está cerrado y aún hay gastos pendientes
+  const eliminarDeshabilitado =
+    eliminandoGrupo || (estaCerrado && !todosGastosPagados);
+
   const eliminarGrupo = useCallback(() => {
     const groupIdStr = String(grupo?.id ?? id ?? '');
     if (!groupIdStr) return;
@@ -498,18 +510,11 @@ export default function DetalleGrupo() {
     });
   };
 
-
-
-
-
-// Abre la pantalla personalizada de escaneo con CameraView y botón de galería
-const abrirCamara = React.useCallback(() => {
-  const groupId = String(grupo?.id ?? id ?? '');
-  router.push({ pathname: '/EscaneoBoleta', params: { grupoId: groupId } });
-}, [grupo?.id, id]);
-
-
-
+  // Abre la pantalla personalizada de escaneo con CameraView y botón de galería
+  const abrirCamara = React.useCallback(() => {
+    const groupId = String(grupo?.id ?? id ?? '');
+    router.push({ pathname: '/EscaneoBoleta', params: { grupoId: groupId } });
+  }, [grupo?.id, id]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
@@ -568,26 +573,27 @@ const abrirCamara = React.useCallback(() => {
                   />
                 </Pressable>
 
+                {/* 🔴 BOTÓN ELIMINAR GRUPO CON NUEVA LÓGICA */}
                 <Pressable
-                onPress={eliminarGrupo}
-                disabled={estaCerrado || eliminandoGrupo}
-                style={({ pressed }) => [
-                  styles.headerIconBtn,
-                  pressed && !estaCerrado && !eliminandoGrupo && styles.headerIconBtnPressed,
-                  (estaCerrado || eliminandoGrupo) && styles.headerIconBtnDisabled,
-                ]}
-                hitSlop={8}
-              >
-                {eliminandoGrupo ? (
-                  <ActivityIndicator size="small" color="rgba(255,255,255,0.75)" />
-                ) : (
-                  <MaterialCommunityIcons
-                    name="delete-outline"
-                    size={19}
-                    color={(estaCerrado || eliminandoGrupo) ? 'rgba(255,255,255,0.35)' : '#fff'}
-                  />
-                )}
-              </Pressable>
+                  onPress={eliminarGrupo}
+                  disabled={eliminarDeshabilitado}
+                  style={({ pressed }) => [
+                    styles.headerIconBtn,
+                    pressed && !eliminarDeshabilitado && styles.headerIconBtnPressed,
+                    eliminarDeshabilitado && styles.headerIconBtnDisabled,
+                  ]}
+                  hitSlop={8}
+                >
+                  {eliminandoGrupo ? (
+                    <ActivityIndicator size="small" color="rgba(255,255,255,0.75)" />
+                  ) : (
+                    <MaterialCommunityIcons
+                      name="delete-outline"
+                      size={19}
+                      color={eliminarDeshabilitado ? 'rgba(255,255,255,0.35)' : '#fff'}
+                    />
+                  )}
+                </Pressable>
 
                 <Pressable 
                   onPress={verGrafico} 
@@ -926,37 +932,6 @@ const abrirCamara = React.useCallback(() => {
               </Text>
             </Pressable>
           </View>
-
-          {/* Fila 3 — Escanear boleta */}
-          {/* <View style={styles.actionsRow}>
-            <Pressable
-              onPress={abrirCamara}
-              disabled={estaCerrado}
-              style={({ pressed }) => [
-                styles.gridActionCard,
-                pressed && !estaCerrado && styles.gridActionCardPressed,
-                estaCerrado && styles.gridActionCardDisabled,
-                { position: 'relative' }
-              ]}
-            >
-              <View style={[styles.gridActionIcon, estaCerrado && styles.gridActionIconDisabled]}>
-                <MaterialCommunityIcons 
-                  name="camera" 
-                  size={28} 
-                  color={estaCerrado ? '#94A3B8' : PRIMARY} 
-                />
-              </View>
-              <Text style={[styles.gridActionTitle, estaCerrado && styles.gridActionTitleDisabled]}>
-                Escanear boleta
-              </Text>
-              <Text style={[styles.gridActionDesc, estaCerrado && styles.gridActionDescDisabled]}>
-                Cámara para escanear
-              </Text>
-            </Pressable> */}
-
-            {/* Espaciador para mantener la grilla 2x2 */}
-            {/* <View style={[styles.gridActionCard, { opacity: 0 }]} />
-          </View> */}
         </View>
       </ScrollView>
     </SafeAreaView>

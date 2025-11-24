@@ -164,7 +164,7 @@ function validarAsignacion({
   const totalNeto = Math.max(0, totalBruto - Math.abs(descuentoCents || 0));
   if (totalNeto <= 0) {
     errores.push(
-      '• El total de la boleta (descuento aplicado) debe ser mayor a 0.'
+      '• El total de la boleta debe ser mayor a 0.'
     );
   }
 
