@@ -2,6 +2,7 @@ import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 import { Slot, Stack } from "expo-router";
 import { ActivityIndicator, Text, View } from "react-native";
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import '../lib/amplify';
 

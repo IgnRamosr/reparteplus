@@ -7,6 +7,7 @@ import { useLocalSearchParams, router, useFocusEffect } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import axios from 'axios';
@@ -76,6 +77,28 @@ function parseBucketFromS3Url(fileUrl: string): { bucket?: string; key?: string 
     return { bucket, key };
   } catch {
     return {};
+  }
+}
+
+/**
+ * Normaliza la imagen para subirla:
+ * - Redimensiona a un ancho máximo razonable
+ * - Comprime para que pese menos (evitar límite 2MB de la Lambda)
+ */
+async function normalizeImageForUpload(uri: string): Promise<string> {
+  try {
+    const result = await ImageManipulator.manipulateAsync(
+      uri,
+      [{ resize: { width: 1400 } }], // ancho máximo, mantiene proporción
+      {
+        compress: 0.7, // 0–1 (baja tamaño del archivo)
+        format: ImageManipulator.SaveFormat.JPEG,
+      }
+    );
+    return result.uri;
+  } catch (e) {
+    console.warn('normalizeImageForUpload error, uso URI original:', e);
+    return uri; // fallback: si falla la manipulación, usamos la original
   }
 }
 
@@ -175,7 +198,7 @@ function evaluarEsBoleta(parsed?: ParsedIA, raw?: string) {
  * =========================== */
 function alertNoPareceBoleta(grupoId: string, razones: string[]) {
   const msg =
-    'La imagen no parece contener una boleta.\n\n'
+    'La imagen no parece contener una boleta.\n\n';
   Alert.alert(
     'No parece una boleta',
     msg,
@@ -273,43 +296,6 @@ export default function EscaneoBoleta() {
     return false;
   }, []);
 
-  const takePhoto = useCallback(async () => {
-    try {
-      if (!cameraRef.current) return;
-      setProcessing(true);
-      const pic = await cameraRef.current.takePictureAsync({ quality: 1, skipProcessing: false });
-      if (!pic?.uri) throw new Error('No se obtuvo la imagen de la cámara.');
-      await processImageUri(pic.uri);
-    } catch (e: any) {
-      console.error('takePhoto error:', e);
-      Alert.alert('Error', e?.message || 'No se pudo tomar la foto.');
-      setProcessing(false);
-    }
-  }, []);
-
-  const openGallery = useCallback(async () => {
-    try {
-      const ok = await ensureGalleryPermission();
-      if (!ok) return;
-
-      const pickerOptions = buildImagePickerOptions();
-      const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
-
-      if (result.canceled) return;
-      const asset = result.assets?.[0];
-      if (!asset?.uri) {
-        Alert.alert('Error', 'No se pudo obtener la imagen seleccionada.');
-        return;
-      }
-      setProcessing(true);
-      await processImageUri(asset.uri);
-    } catch (e: any) {
-      console.error('openGallery error:', e);
-      Alert.alert('Error', e?.message || 'No se pudo abrir la galería.');
-      setProcessing(false);
-    }
-  }, [ensureGalleryPermission]);
-
   const processImageUri = useCallback(async (uri: string) => {
     try {
       const fileName = `boleta_${Date.now()}.jpg`;
@@ -329,9 +315,31 @@ export default function EscaneoBoleta() {
       const { bucket: parsedBucket } = parseBucketFromS3Url(fileUrl || '');
       const r2 = await apiIA.post('/imagen', { bucket: parsedBucket, key });
 
-      // Si Bedrock/IA falla, lo tratamos como "no leíble" (no boleta)
+      // Manejo de errores de la IA (por ejemplo, tamaño excesivo)
       if (!(r2.status >= 200 && r2.status < 300)) {
-        alertNoPareceBoleta(grupoId, [`La IA respondió estado ${r2.status}.`]);
+        let msgServer: string | undefined;
+        try {
+          const body = typeof r2.data === 'string' ? JSON.parse(r2.data) : r2.data;
+          msgServer = body?.message || body?.error;
+        } catch {
+          msgServer = undefined;
+        }
+
+        if (msgServer && msgServer.toLowerCase().includes('tamaño') && msgServer.toLowerCase().includes('max')) {
+          Alert.alert(
+            'Imagen demasiado pesada',
+            'La foto de la boleta es muy pesada para el analizador.\n\n' +
+              'Prueba con:\n' +
+              '• Tomar la foto un poco más lejos\n' +
+              '• Evitar modo retrato/alta resolución\n' +
+              '• O subir una foto ya comprimida desde la galería.'
+          );
+        } else {
+          alertNoPareceBoleta(grupoId, [
+            `La IA respondió estado ${r2.status}.`,
+            ...(msgServer ? [`Detalle: ${msgServer}`] : []),
+          ]);
+        }
         return;
       }
 
@@ -392,10 +400,12 @@ export default function EscaneoBoleta() {
         warnings.push('El total detectado es 0 o vacío; corrige manualmente si corresponde.');
       }
 
+      // 👇 Aquí mandamos la URI local al screen de revisión
       router.push({
         pathname: '/RevisionBoleta',
         params: {
           grupoId,
+          image_uri: uri, // <-- URI local de la imagen (para mostrarla en RevisionBoleta)
           payload: JSON.stringify({
             parsed: {
               vendor: parsed.vendor ?? null,
@@ -406,11 +416,12 @@ export default function EscaneoBoleta() {
             items_normalized,
             currency: cur,
             warnings,
-            // opcional: enviar trazas de por qué se consideró boleta
             receipt_signals: razones,
+            image_uri: uri, // también dentro del payload por si lo lees desde ahí
           }),
         },
       });
+
     } catch (e: any) {
       console.error('processImageUri error:', e);
       alertNoPareceBoleta(grupoId, [e?.message || 'No se pudo procesar la imagen.']);
@@ -418,6 +429,57 @@ export default function EscaneoBoleta() {
       setProcessing(false);
     }
   }, [grupoId]);
+
+  const takePhoto = useCallback(async () => {
+    try {
+      if (!cameraRef.current || processing) return;
+
+      setProcessing(true);
+
+      const pic = await cameraRef.current.takePictureAsync({
+        quality: 0.7,        // antes 1 → ahora más comprimida
+        skipProcessing: false,
+      });
+
+      if (!pic?.uri) throw new Error('No se obtuvo la imagen de la cámara.');
+
+      // Normalizar (redimensionar/comprimir) antes de subir
+      const normalizedUri = await normalizeImageForUpload(pic.uri);
+
+      await processImageUri(normalizedUri);
+    } catch (e: any) {
+      console.error('takePhoto error:', e);
+      Alert.alert('Error', e?.message || 'No se pudo tomar la foto.');
+      setProcessing(false);
+    }
+  }, [processing, processImageUri]);
+
+  const openGallery = useCallback(async () => {
+    try {
+      const ok = await ensureGalleryPermission();
+      if (!ok) return;
+
+      const pickerOptions = buildImagePickerOptions();
+      const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
+
+      if (result.canceled) return;
+      const asset = result.assets?.[0];
+      if (!asset?.uri) {
+        Alert.alert('Error', 'No se pudo obtener la imagen seleccionada.');
+        return;
+      }
+      setProcessing(true);
+
+      // Normalizar igual que la foto de cámara
+      const normalizedUri = await normalizeImageForUpload(asset.uri);
+
+      await processImageUri(normalizedUri);
+    } catch (e: any) {
+      console.error('openGallery error:', e);
+      Alert.alert('Error', e?.message || 'No se pudo abrir la galería.');
+      setProcessing(false);
+    }
+  }, [ensureGalleryPermission, processImageUri]);
 
   const irRegistrarManual = useCallback(() => {
     if (processing) return; // safety

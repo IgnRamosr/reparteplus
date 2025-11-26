@@ -596,7 +596,8 @@ export default function DetalleGrupo() {
                 </Pressable>
 
                 <Pressable 
-                  onPress={verGrafico} 
+                  onPress={verGrafico}
+                  disabled={!estaCerrado}
                   style={({ pressed }) => [styles.headerIconBtn, pressed && styles.headerIconBtnPressed]} 
                   hitSlop={8}
                 >
