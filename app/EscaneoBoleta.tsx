@@ -208,7 +208,7 @@ function alertNoPareceBoleta(grupoId: string, razones: string[]) {
         text: 'Registrar manual',
         onPress: () => {
           router.push({
-            pathname: '/RevisionBoleta',
+            pathname: './RevisionBoleta',
             params: { grupoId },
           });
         },
@@ -402,7 +402,7 @@ export default function EscaneoBoleta() {
 
       // 👇 Aquí mandamos la URI local al screen de revisión
       router.push({
-        pathname: '/RevisionBoleta',
+        pathname: './RevisionBoleta',
         params: {
           grupoId,
           image_uri: uri, // <-- URI local de la imagen (para mostrarla en RevisionBoleta)
@@ -484,7 +484,7 @@ export default function EscaneoBoleta() {
   const irRegistrarManual = useCallback(() => {
     if (processing) return; // safety
     router.push({
-      pathname: '/RevisionBoleta',
+      pathname: './RevisionBoleta',
       params: { grupoId },
     });
   }, [grupoId, processing]);

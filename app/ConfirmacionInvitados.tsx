@@ -1,5 +1,7 @@
 // app/ConfirmacionInvitados.tsx
+
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+
 import {
   ActivityIndicator,
   Alert,

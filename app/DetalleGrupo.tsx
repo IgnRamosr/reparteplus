@@ -513,7 +513,7 @@ export default function DetalleGrupo() {
   // Abre la pantalla personalizada de escaneo con CameraView y botón de galería
   const abrirCamara = React.useCallback(() => {
     const groupId = String(grupo?.id ?? id ?? '');
-    router.push({ pathname: '/EscaneoBoleta', params: { grupoId: groupId } });
+    router.push({ pathname: './EscaneoBoleta', params: { grupoId: groupId } });
   }, [grupo?.id, id]);
 
   return (
